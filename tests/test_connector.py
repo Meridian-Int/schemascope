@@ -101,6 +101,41 @@ def test_sqlite_connector_reads_rows(tmp_path):
         c.close()
 
 
+def test_sqlite_connector_quotes_identifier_names(tmp_path):
+    db = tmp_path / "app.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute('CREATE TABLE "select" (id INTEGER)')
+    conn.execute('INSERT INTO "select" VALUES (1)')
+    conn.execute('CREATE TABLE "weird""name" ("odd""col" TEXT)')
+    conn.execute('INSERT INTO "weird""name" VALUES (?)', ("ok",))
+    conn.commit()
+    conn.close()
+
+    c = SqliteConnector(db)
+    try:
+        assert c.columns("select") == ["id"]
+        assert list(c.rows("select")) == [{"id": 1}]
+        assert c.columns('weird"name') == ['odd"col']
+        assert list(c.rows('weird"name')) == [{'odd"col': "ok"}]
+    finally:
+        c.close()
+
+
+def test_sqlite_missing_table_rows_raise_connector_error(tmp_path):
+    db = tmp_path / "app.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE users (id INTEGER)")
+    conn.commit()
+    conn.close()
+
+    c = SqliteConnector(db)
+    try:
+        with pytest.raises(ConnectorError):
+            list(c.rows("missing"))
+    finally:
+        c.close()
+
+
 def test_open_connector_picks_csv_for_directory(tmp_path):
     assert isinstance(open_connector(tmp_path), CsvConnector)
 

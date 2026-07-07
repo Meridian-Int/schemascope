@@ -75,6 +75,17 @@ def _check_unique_header(name: str, header: List[str]) -> None:
         seen.add(col)
 
 
+def _quote_sqlite_identifier(name: str) -> str:
+    """Return ``name`` quoted as a SQLite identifier.
+
+    SQLite parameters bind values, not table/column identifiers. Any identifier
+    interpolated into SQL therefore needs SQL-standard double-quote escaping so
+    names like ``select`` or ``weird"name`` remain valid identifiers instead of
+    malformed SQL.
+    """
+    return '"' + name.replace('"', '""') + '"'
+
+
 # --------------------------------------------------------------------------- #
 # CSV connector (primary)
 # --------------------------------------------------------------------------- #
@@ -174,13 +185,27 @@ class SqliteConnector:
         return cur.fetchone() is not None
 
     def columns(self, name: str) -> List[str]:
-        cur = self._conn.execute(f'PRAGMA table_info("{name}")')
-        return [row[1] for row in cur.fetchall()]
+        import sqlite3
+
+        try:
+            cur = self._conn.execute(
+                f"PRAGMA table_info({_quote_sqlite_identifier(name)})"
+            )
+            return [row[1] for row in cur.fetchall()]
+        except sqlite3.Error as e:
+            raise ConnectorError(f"cannot read SQLite table {name!r}: {e}") from e
 
     def rows(self, name: str) -> Iterator[Dict[str, Any]]:
-        cur = self._conn.execute(f'SELECT * FROM "{name}"')
-        for row in cur:
-            yield {k: row[k] for k in row.keys()}
+        import sqlite3
+
+        try:
+            cur = self._conn.execute(
+                f"SELECT * FROM {_quote_sqlite_identifier(name)}"
+            )
+            for row in cur:
+                yield {k: row[k] for k in row.keys()}
+        except sqlite3.Error as e:
+            raise ConnectorError(f"cannot read SQLite table {name!r}: {e}") from e
 
     def close(self) -> None:
         try:

@@ -101,3 +101,17 @@ def test_profile_over_bundled_examples():
     assert all(f.type_ok for f in users.fields)
     age = {f.name: f for f in users.fields}["age"]
     assert age.null_count == 2
+
+
+def test_profile_bundled_examples_match_across_schema_formats():
+    """The shipped JSON/YAML/XML/TXT schemas promise one canonical model."""
+    reports = []
+    for fmt in ("json", "yaml", "xml", "txt"):
+        schema = load_schema(EXAMPLES / f"schema.{fmt}")
+        connector = open_connector(EXAMPLES / "data")
+        try:
+            reports.append(profile(schema, connector).to_dict())
+        finally:
+            connector.close()
+
+    assert reports == [reports[0]] * len(reports)

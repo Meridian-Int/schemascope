@@ -1,10 +1,14 @@
 """Schema loading: the cross-format equivalence keystone, format detection,
 XML namespaces, and error handling."""
 
+from pathlib import Path
+
 import pytest
 
 from schemascope.model import SchemaError
 from schemascope.schema_loader import detect_format, load_schema
+
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 
 # The SAME schema in all four formats, deliberately using different raw type
 # spellings (int / integer / INT, varchar / string / TEXT) to prove
@@ -66,6 +70,14 @@ def test_keystone_cross_format_equivalence(tmp_path):
     assert users.field_by_name("email").type == "string"
     age = users.field_by_name("age")
     assert age.type == "integer" and age.nullable is True
+
+
+def test_bundled_example_schemas_are_equivalent():
+    schemas = [
+        load_schema(EXAMPLES / f"schema.{fmt}")
+        for fmt in ("json", "yaml", "xml", "txt")
+    ]
+    assert schemas == [schemas[0]] * len(schemas)
 
 
 @pytest.mark.parametrize(
