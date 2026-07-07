@@ -103,6 +103,22 @@ def test_profile_over_bundled_examples():
     assert age.null_count == 2
 
 
+def test_profile_late_drift_is_flagged(tmp_path):
+    """A column declared ``integer`` that stays integer for well past any early
+    sample window and only then drifts to text must be flagged: inferred
+    ``string`` and ``type_ok`` False. This is the drift-detection guarantee for
+    large files."""
+    lines = ["code"] + [str(i) for i in range(1500)] + ["OOPS"]  # 1500 ints, then text
+    (tmp_path / "events.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    schema = Schema(entities=[Entity(
+        name="events", fields=[Field(name="code", type="integer", nullable=True)])])
+    report = profile(schema, CsvConnector(tmp_path))
+    code = {f.name: f for f in report.entity("events").fields}["code"]
+    assert code.row_count == 1501
+    assert code.inferred_type == "string"
+    assert code.type_ok is False
+
+
 def test_profile_bundled_examples_match_across_schema_formats():
     """The shipped JSON/YAML/XML/TXT schemas promise one canonical model."""
     reports = []

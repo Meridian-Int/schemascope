@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from .connector import Connector, _resolve_column, store_name
 from .model import Entity, Schema
-from .typeinfer import INFER_SAMPLE, infer_type, type_compatible
+from .typeinfer import TypeInferer, type_compatible
 
 
 @dataclass
@@ -128,7 +128,10 @@ def _profile_entity(entity: Entity, connector: Connector) -> EntityProfile:
     row_count = 0
     nulls: Dict[str, int] = {f.name: 0 for f in entity.fields}
     distinct: Dict[str, set] = {f.name: set() for f in entity.fields}
-    samples: Dict[str, List[Any]] = {f.name: [] for f in entity.fields}
+    # Infer each field's type incrementally over EVERY non-null value in this one
+    # pass (O(1) memory per field), so drift anywhere in the file is caught — not
+    # just in the first N rows.
+    inferers: Dict[str, TypeInferer] = {f.name: TypeInferer() for f in entity.fields}
 
     for row in connector.rows(source):
         row_count += 1
@@ -141,14 +144,13 @@ def _profile_entity(entity: Entity, connector: Connector) -> EntityProfile:
                 nulls[f.name] += 1
                 continue
             distinct[f.name].add(value)
-            if len(samples[f.name]) < INFER_SAMPLE:
-                samples[f.name].append(value)
+            inferers[f.name].add(value)
 
     field_profiles: List[FieldProfile] = []
     for f in entity.fields:
         col = resolved[f.name]
         present = col is not None
-        inferred = infer_type(samples[f.name]) if present else "unknown"
+        inferred = inferers[f.name].result() if present else "unknown"
         field_profiles.append(
             FieldProfile(
                 name=f.name,

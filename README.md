@@ -22,16 +22,28 @@ language.
 
 ## Install
 
-For local development:
+```bash
+pip install schemascope
+```
+
+Then confirm it's on your `PATH`:
+
+```bash
+schemascope --version
+```
+
+Requires Python 3.8+; PyYAML installs automatically with the package. There are
+no other dependencies.
+
+To work on schemascope from a source checkout instead:
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-Requires Python 3.8+ and PyYAML. PyYAML is installed automatically from the
-package metadata. A current pip is recommended because older pip versions may
-not support editable installs for `pyproject.toml` projects.
+(A current pip is recommended — older versions may not support editable installs
+for `pyproject.toml` projects.)
 
 ## Quick Start
 
@@ -365,10 +377,11 @@ That makes drift visible instead of dropping absent objects from the output.
 
 `schemascope` infers one type per field from observed non-null values.
 
-Inference checks the first 1000 non-null values for each field. A type is chosen
-only when every sampled value matches that type. If no specific type matches,
-the inferred type is `string`. If there are no non-null values, the inferred
-type is `unknown`.
+Inference checks *every* non-null value for each field, in a single streaming
+pass. A type is chosen only when every value matches that type, so a column that
+drifts to a non-conforming value anywhere in the file — not just in the first few
+rows — is reported as a mismatch. If no specific type matches, the inferred type
+is `string`. If there are no non-null values, the inferred type is `unknown`.
 
 Inference order:
 
@@ -481,7 +494,9 @@ schemascope schemafile data/ --schema-format yaml
   distinct counts, inferred types, and type compatibility.
 - It does not enforce foreign keys, uniqueness, ranges, regexes, or custom
   constraints.
-- Type inference samples the first 1000 non-null values per field.
+- Type inference scans every non-null value in one pass (O(1) memory per field),
+  so drift anywhere in the file is caught — at the cost of running the type
+  predicates over the full column rather than a sample.
 - `distinct_count` tracks all distinct non-null values for each profiled field,
   which is simple and exact but not approximate-memory analytics.
 - TXT schemas do not support metadata such as schema name, version, source, or

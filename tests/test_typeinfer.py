@@ -67,3 +67,25 @@ def test_type_compatible_rules():
     assert type_compatible("integer", "string") is False
     assert type_compatible("unknown", "integer") is True
     assert type_compatible("date", "date") is True
+
+
+def test_late_drift_is_detected_over_all_values():
+    """Inference scans EVERY value, not an early sample: a column that reads as one
+    type for thousands of rows then drifts must widen to the broader type."""
+    assert infer_type(["1"] * 5000) == "boolean"          # clean: all 0/1-ish
+    assert infer_type(["1"] * 5000 + ["not_an_int"]) == "string"   # late drift caught
+
+
+def test_type_inferer_incremental():
+    """The incremental accumulator tracks the same result as a full re-scan."""
+    from schemascope.typeinfer import TypeInferer
+
+    inf = TypeInferer()
+    assert inf.result() == "unknown"          # nothing seen yet
+    for v in ["1", "2", "3"]:
+        inf.add(v)
+    assert inf.result() == "integer"
+    inf.add("3.5")                            # drift integer -> float
+    assert inf.result() == "float"
+    inf.add("nope")                           # drift float -> string
+    assert inf.result() == "string"

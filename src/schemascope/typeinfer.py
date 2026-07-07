@@ -3,17 +3,13 @@
 Values reach us either as strings (CSV) or native Python (SQLite). Every
 predicate accepts ``Any`` and stringifies when it needs to, so inference is
 uniform across sources. :func:`infer_type` picks the *most specific* canonical
-type that **all** sampled values satisfy — strict on purpose, so any mixed
+type that **all** observed values satisfy — strict on purpose, so any mixed
 column degrades to ``"string"`` rather than guessing.
 """
 
 from __future__ import annotations
 
 from typing import Any, Iterable
-
-# Inference only samples this many non-null values; more than enough to classify
-# a column and keeps a huge table cheap. The profiler feeds values in row order.
-INFER_SAMPLE = 1000
 
 # Case-insensitive tokens accepted as booleans.
 _BOOL_TOKENS = {"true", "false", "1", "0", "yes", "no", "t", "f", "y", "n"}
@@ -112,7 +108,7 @@ def is_datetime(value: Any) -> bool:
     return 0 <= hh < 24 and 0 <= mm < 60 and 0 <= ss < 60
 
 
-# Ordered most-specific-first. A type wins only if every sampled value matches.
+# Ordered most-specific-first. A type wins only if every value matches.
 _INFER_ORDER = (
     ("boolean", is_bool),
     ("integer", is_integer),
@@ -122,24 +118,48 @@ _INFER_ORDER = (
 )
 
 
+class TypeInferer:
+    """Infer a column's type incrementally over **all** its non-null values.
+
+    A candidate type survives only while every value seen so far satisfies it, so
+    a column that drifts to a violating value after any number of rows is caught —
+    unlike sampling the first N values, which silently misses late drift in a large
+    file. One pass, O(1) memory, and it short-circuits to ``string`` the moment no
+    candidate survives. Candidates stay most-specific-first, so the winner is what
+    a full re-scan would pick.
+    """
+
+    __slots__ = ("_candidates", "_seen")
+
+    def __init__(self) -> None:
+        self._candidates = list(_INFER_ORDER)   # (name, predicate), most-specific first
+        self._seen = False
+
+    def add(self, value: Any) -> None:
+        """Fold one non-null value into the running inference."""
+        self._seen = True
+        if self._candidates:
+            self._candidates = [(n, p) for n, p in self._candidates if p(value)]
+
+    def result(self) -> str:
+        """Inferred canonical type: the most-specific surviving candidate, else
+        ``"string"`` if values were seen but none matched, else ``"unknown"``."""
+        if not self._seen:
+            return "unknown"
+        return self._candidates[0][0] if self._candidates else "string"
+
+
 def infer_type(values: Iterable[Any]) -> str:
     """Infer a canonical type from a set of **non-null** values.
 
-    Tests boolean -> integer -> float -> date -> datetime; the first type that
-    *all* sampled values satisfy wins. If none do, the column is ``"string"``.
-    An empty input infers ``"unknown"``.
+    Scans *every* value: the most specific type that all values satisfy wins
+    (boolean -> integer -> float -> date -> datetime); if none do, the column is
+    ``"string"``; an empty input infers ``"unknown"``.
     """
-    sample = []
+    inf = TypeInferer()
     for v in values:
-        sample.append(v)
-        if len(sample) >= INFER_SAMPLE:
-            break
-    if not sample:
-        return "unknown"
-    for name, pred in _INFER_ORDER:
-        if all(pred(v) for v in sample):
-            return name
-    return "string"
+        inf.add(v)
+    return inf.result()
 
 
 def type_compatible(declared: str, inferred: str) -> bool:
