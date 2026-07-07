@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "schemascope"
+dynamic = ["version"]
+description = "Profile a data source against a schema across JSON/YAML/XML/TXT formats."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "schemascope maintainers" }]
+dependencies = ["PyYAML>=5.1"]
+
+[project.scripts]
+schemascope = "schemascope.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "schemascope.version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

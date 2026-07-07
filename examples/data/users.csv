@@ -1,0 +1,6 @@
+id,email,age,active,deleted,signup_date
+1,alice@example.com,31,true,0,2021-03-05
+2,bob@example.com,,false,0,2021-07-19
+3,carol@example.com,27,true,1,2022-01-02
+4,dave@example.com,44,true,0,2022-11-30
+5,erin@example.com,,false,0,2023-05-14

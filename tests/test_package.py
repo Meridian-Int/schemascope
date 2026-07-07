@@ -1,0 +1,31 @@
+"""The public package surface: top-level API and version are importable.
+
+Regression for the QA finding that ``import schemascope; schemascope.load_schema``
+and ``schemascope.__version__`` raised ``AttributeError`` (no ``__init__.py``).
+"""
+
+import schemascope
+
+
+def test_version_surfaced_at_package_level():
+    assert schemascope.__version__ == "0.1.0"
+
+
+def test_public_api_is_importable_from_top_level():
+    for attr in (
+        "load_schema",
+        "detect_format",
+        "profile",
+        "open_connector",
+        "Schema",
+        "Entity",
+        "Field",
+        "SchemaError",
+        "ConnectorError",
+        "infer_type",
+        "type_compatible",
+    ):
+        assert hasattr(schemascope, attr), attr
+
+    assert callable(schemascope.load_schema)
+    assert callable(schemascope.profile)
