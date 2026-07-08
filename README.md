@@ -128,7 +128,7 @@ Confirm it landed on your `PATH`:
 schemascope --version
 ```
 
-You should see a line like `schemascope 0.1.0`. If instead you get "command not found", jump to [Troubleshooting](#troubleshooting) — the usual fix is to run it as `python -m schemascope` instead.
+You should see a line like `schemascope 0.2.0`. If instead you get "command not found", jump to [Troubleshooting](#troubleshooting) — the usual fix is to run it as `python -m schemascope` instead.
 
 PyYAML is installed automatically with the package; there are no other runtime dependencies.
 
@@ -339,6 +339,17 @@ entities:
     type_ok: true
   # ... one block per field, same numbers as the JSON above
 ```
+
+### 6. Now run it against a database
+
+The walkthrough used CSV files so you can try it with zero setup — but the main way to use schemascope is straight against a **live database**. Point `DATA` at a SQLAlchemy URL instead of a directory (install the driver for your engine first — `pip install "schemascope[postgres]"`, `[mysql]`, `[mssql]`, `[oracle]`, …):
+
+```bash
+schemascope examples/schema.json "postgresql+psycopg://user:pw@host:5432/app"
+schemascope examples/schema.json "mysql+pymysql://user:pw@host:3306/app"
+```
+
+schemascope maps each schema entity to a table, reads it live, and prints the same report — on any engine SQLAlchemy speaks (PostgreSQL, MySQL/MariaDB, SQL Server/Azure/Fabric, Oracle, Snowflake, BigQuery, Redshift, …). A table the schema names but the database doesn't have comes back `present: false` rather than failing. See [Step 2](#step-2--point-it-at-your-data) for the full list and [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database) for the exact URL + driver per engine.
 
 That is the whole tool. Everything below is detail and reference.
 
