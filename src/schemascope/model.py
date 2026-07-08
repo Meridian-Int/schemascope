@@ -14,6 +14,7 @@ cross-format test asserts with a single ``==``.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -29,34 +30,82 @@ CANONICAL_TYPES = (
     "unknown",
 )
 
-# alias -> canonical. Lower-cased, stripped lookups only. Unknown aliases fall
-# through to ``"unknown"`` (the raw string is preserved on the Field so nothing
-# is lost). Extend the tool by editing this table — deliberately not pluggable.
-_TYPE_ALIASES: Dict[str, str] = {
-    "str": "string", "string": "string", "text": "string", "varchar": "string",
-    "char": "string", "uuid": "string", "enum": "string",
-    "int": "integer", "integer": "integer", "bigint": "integer",
-    "smallint": "integer", "long": "integer",
-    "float": "float", "double": "float", "decimal": "float", "numeric": "float",
-    "real": "float", "number": "float",
-    "bool": "boolean", "boolean": "boolean",
-    "date": "date",
-    "datetime": "datetime", "timestamp": "datetime",
-}
+# Vendor/dialect type spelling -> canonical (the mapping documented in the README's
+# "Type Names" + "Appendix B" tables). Lookups are lower-cased, have any
+# ``(size[,scale])`` / ``(max)`` parameter stripped, and inner whitespace collapsed,
+# so ``VARCHAR(255)``, ``numeric(10, 2)``, ``double precision`` and
+# ``timestamp with time zone`` all resolve. Grouped by target for auditability.
+#
+# Exotic types (json/jsonb/xml, arrays, spatial, and binary blob/bytea/varbinary)
+# map to ``string``: exported to CSV/SQLite they arrive as serialized/hex/base64
+# text and infer ``string``, so a declared ``string`` accepts them. Ambiguous
+# numerics (``number``, ``numeric``, ``money``) map to ``float`` — the safe
+# superset, since integer data is compatible with a declared float but not the
+# reverse. Only genuinely uninterpretable spellings fall through to ``"unknown"``.
+def _build_aliases() -> Dict[str, str]:
+    groups: Dict[str, List[str]] = {
+        "integer": [
+            "int", "integer", "int2", "int4", "int8", "int64", "bigint",
+            "smallint", "tinyint", "mediumint", "byteint", "long",
+            "serial", "smallserial", "bigserial", "varint", "counter",
+        ],
+        "float": [
+            "float", "float4", "float8", "float64", "double", "double precision",
+            "real", "decimal", "decimal128", "dec", "numeric", "number",
+            "bignumeric", "fixed", "money", "smallmoney",
+        ],
+        "string": [
+            "str", "string", "char", "character", "nchar", "bpchar", "varchar",
+            "varchar2", "nvarchar", "nvarchar2", "character varying",
+            "national character varying", "text", "ntext", "tinytext",
+            "mediumtext", "longtext", "clob", "nclob", "citext", "name",
+            "uuid", "guid", "uniqueidentifier", "enum", "set",
+            "json", "jsonb", "xml", "hstore", "variant", "object", "array",
+            "struct", "map",
+            "bytea", "blob", "binary", "varbinary", "bytes", "image",
+            "time", "timetz", "time with time zone", "time without time zone",
+            "interval", "year", "inet", "cidr", "macaddr",
+            "geometry", "geography", "ip", "objectid", "rowid", "urowid",
+        ],
+        "boolean": ["bool", "boolean", "bit"],
+        "date": ["date"],
+        "datetime": [
+            "datetime", "datetime2", "smalldatetime", "datetimeoffset",
+            "timestamp", "timestamptz", "timestamp with time zone",
+            "timestamp without time zone", "timestamp with local time zone",
+            "timestamp_ntz", "timestamp_ltz", "timestamp_tz",
+        ],
+    }
+    table: Dict[str, str] = {}
+    for canon, names in groups.items():
+        for n in names:
+            table[n] = canon
+    return table
+
+
+_TYPE_ALIASES: Dict[str, str] = _build_aliases()
+
+# A trailing size/precision parameter, e.g. "(255)", "(10, 2)", "(max)".
+_TYPE_PARAM = re.compile(r"\(.*", re.DOTALL)
+_WS = re.compile(r"\s+")
 
 
 def normalize_type(raw: Optional[str]) -> str:
     """Map a source type string onto one of :data:`CANONICAL_TYPES`.
 
-    Empty / ``None`` / any non-string value -> ``"unknown"``. Lookup is case- and
-    whitespace-insensitive. Unrecognized names also become ``"unknown"`` (callers
-    keep the raw string on the ``Field`` for reporting). A non-string ``type``
-    (e.g. ``123`` or ``true`` from malformed JSON/YAML) normalizes to
-    ``"unknown"`` rather than crashing.
+    Vendor-aware: a ``(size[,scale])`` / ``(max)`` parameter is stripped and inner
+    whitespace collapsed before lookup, so ``VARCHAR(255)``, ``numeric(10, 2)``,
+    ``timestamp with time zone`` and ``double precision`` all resolve.
+
+    Empty / ``None`` / any non-string value -> ``"unknown"``. Genuinely unmodeled
+    types (binary, spatial, arrays, composites) and unrecognized names also become
+    ``"unknown"`` — the raw string is kept on the ``Field`` so nothing is lost. A
+    non-string ``type`` (e.g. ``123`` from malformed JSON/YAML) does not crash.
     """
     if not isinstance(raw, str):
         return "unknown"
-    key = raw.strip().lower()
+    key = _TYPE_PARAM.sub("", raw).strip().lower()   # drop "(255)" / "(10,2)" / "(max)"
+    key = _WS.sub(" ", key)                           # "double  precision" -> "double precision"
     if not key:
         return "unknown"
     return _TYPE_ALIASES.get(key, "unknown")
