@@ -145,24 +145,27 @@ python -m pip install -e .
 
 ---
 
-## Your first run in 5 minutes
+## Getting started — profile your database
 
-The repository ships a complete, tiny example, so you can see schemascope work before touching your own data. From the root of a source checkout, follow these five steps.
+Three steps: install schemascope with the driver for your engine, describe your data with a schema, then point schemascope at your database.
 
-### 1. Know your two inputs
+### 1. Install schemascope and your database driver
 
-The command below profiles the schema `examples/schema.json` against the data directory `examples/data`. The directory holds one file, `examples/data/users.csv`:
-
-```text
-id,email,age,active,deleted,signup_date
-1,alice@example.com,31,true,0,2021-03-05
-2,bob@example.com,,false,0,2021-07-19
-3,carol@example.com,27,true,1,2022-01-02
-4,dave@example.com,44,true,0,2022-11-30
-5,erin@example.com,,false,0,2023-05-14
+```bash
+pip install schemascope
 ```
 
-and the schema, `examples/schema.json`, declares one entity, `users`:
+schemascope reaches your database through SQLAlchemy, so add the driver for your engine (SQLite needs none):
+
+```bash
+pip install "schemascope[postgres]"    # or [mysql], [mssql], [oracle], [snowflake], [bigquery], …
+```
+
+The full engine list — with the URL prefix for each — is in [Point it at your data → SQL database](#sql-database-any-sqlalchemy-url).
+
+### 2. Give it a schema
+
+A **schema** is a small file that lists the tables you expect (schemascope calls each an *entity*), the columns in each (its *fields*), and the type every column should hold. You normally **generate it from your database's own structure** rather than writing it by hand — [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database) has the exact command for your engine. However you obtain it, a schema for a `users` table reads like this (JSON; YAML, XML, and a terse TXT DSL are also supported):
 
 ```json
 {
@@ -174,7 +177,6 @@ and the schema, `examples/schema.json`, declares one entity, `users`:
         {"name": "email", "type": "string"},
         {"name": "age", "type": "integer", "nullable": true},
         {"name": "active", "type": "boolean"},
-        {"name": "deleted", "type": "integer", "nullable": false},
         {"name": "signup_date", "type": "date"}
       ]
     }
@@ -182,176 +184,46 @@ and the schema, `examples/schema.json`, declares one entity, `users`:
 }
 ```
 
-### 2. Run the command
+Save it as, e.g., `users-schema.json`. Each entity's `name` is the table schemascope looks for; if your table is named differently, set a `source` (see [`source` vs `name`](#source-vs-name)).
+
+### 3. Point schemascope at your database
+
+Pass the schema file and your database's SQLAlchemy URL:
 
 ```bash
-schemascope examples/schema.json examples/data
+schemascope users-schema.json "postgresql+psycopg://user:pw@host:5432/app"
 ```
 
-The first argument is the **schema**; the second is the **data source** (here, a directory).
+Swap in the URL for your engine — `mysql+pymysql://…`, `mssql+pyodbc://…?driver=ODBC+Driver+18+for+SQL+Server`, `oracle+oracledb://…`, `snowflake://…`, and so on ([full list](#sql-database-any-sqlalchemy-url)). schemascope connects, finds each table your schema names, scans every row, and prints a report to standard output (add `-o yaml` for YAML). It **only reads** — it never changes your database.
 
-### 3. Read the report
+### 4. Read the report
 
-schemascope prints the report to standard output. It does **not** write any files — the report is the output. Running the command above prints this exact JSON:
+The report is one block per entity, each holding one block per field. Three things tell you whether the database still matches your schema:
+
+- **`present`** — `false` on an entity means that table is missing; `false` on a field means that column is missing. schemascope keeps missing things in the report rather than dropping them, so drift stays visible.
+- **`type_ok`** — `false` means the column's values no longer look like the type you declared (for example, a column declared `integer` now holds text). This is the core drift signal.
+- **`null_count` / `null_fraction` / `distinct_count`** — how many values were null, what share of the rows that is, and how many distinct non-null values the column holds.
+
+A single field in the report looks like this:
 
 ```json
 {
-  "entities": [
-    {
-      "name": "users",
-      "source": "users",
-      "present": true,
-      "row_count": 5,
-      "fields": [
-        {
-          "name": "id",
-          "declared_type": "integer",
-          "column": "id",
-          "present": true,
-          "row_count": 5,
-          "null_count": 0,
-          "null_fraction": 0.0,
-          "distinct_count": 5,
-          "inferred_type": "integer",
-          "type_ok": true
-        },
-        {
-          "name": "email",
-          "declared_type": "string",
-          "column": "email",
-          "present": true,
-          "row_count": 5,
-          "null_count": 0,
-          "null_fraction": 0.0,
-          "distinct_count": 5,
-          "inferred_type": "string",
-          "type_ok": true
-        },
-        {
-          "name": "age",
-          "declared_type": "integer",
-          "column": "age",
-          "present": true,
-          "row_count": 5,
-          "null_count": 2,
-          "null_fraction": 0.4,
-          "distinct_count": 3,
-          "inferred_type": "integer",
-          "type_ok": true
-        },
-        {
-          "name": "active",
-          "declared_type": "boolean",
-          "column": "active",
-          "present": true,
-          "row_count": 5,
-          "null_count": 0,
-          "null_fraction": 0.0,
-          "distinct_count": 2,
-          "inferred_type": "boolean",
-          "type_ok": true
-        },
-        {
-          "name": "deleted",
-          "declared_type": "integer",
-          "column": "deleted",
-          "present": true,
-          "row_count": 5,
-          "null_count": 0,
-          "null_fraction": 0.0,
-          "distinct_count": 2,
-          "inferred_type": "boolean",
-          "type_ok": true
-        },
-        {
-          "name": "signup_date",
-          "declared_type": "date",
-          "column": "signup_date",
-          "present": true,
-          "row_count": 5,
-          "null_count": 0,
-          "null_fraction": 0.0,
-          "distinct_count": 5,
-          "inferred_type": "date",
-          "type_ok": true
-        }
-      ]
-    }
-  ]
+  "name": "age",
+  "declared_type": "integer",
+  "column": "age",
+  "present": true,
+  "row_count": 4820,
+  "null_count": 613,
+  "null_fraction": 0.127178,
+  "distinct_count": 88,
+  "inferred_type": "integer",
+  "type_ok": true
 }
 ```
 
-### 4. Understand it field by field
+Here schemascope scanned 4,820 rows of `age`, found 613 nulls (~12.7%) and 88 distinct values, and every non-null value looked like an integer — matching the declared type, so `type_ok` is `true`. If someone later loads the word `"unknown"` into that column, `inferred_type` flips to `string` and `type_ok` becomes `false`: that is drift. Every field's full meaning is in [Output Reference](#output-reference); the type rules are in [Type Inference](#type-inference).
 
-This is where schemascope earns its keep, so read it slowly against the five rows above.
-
-At the entity level: `"present": true` means `users.csv` was found, and `"row_count": 5` means it has 5 data rows (the header row does not count). `"source": "users"` is the file stem schemascope read (`users` → `users.csv`).
-
-Now walk each field:
-
-- **`id`** — Values `1,2,3,4,5`. All five are whole numbers, none empty, all different. So `null_count` is 0, `distinct_count` is 5, and the inferred type is `integer`. You declared `integer`, so `type_ok` is `true`. (It is not inferred as `boolean` because the values are not all 0/1.)
-
-- **`email`** — Five different addresses, none empty. `null_count` 0, `distinct_count` 5. The values are not numbers, dates, or booleans, so inference falls back to `string`. Declared `string`, so `type_ok` is `true`.
-
-- **`age`** — Values `31, (empty), 27, 44, (empty)`. Two rows (bob and erin) have an empty cell, which counts as null: `null_count` is 2 and `null_fraction` is `2 / 5 = 0.4`. The three remaining non-null values (`31`, `27`, `44`) are all different, so `distinct_count` is 3. schemascope only ever infers a type from **non-null** values, and all three are whole numbers, so the inferred type is `integer`. Declared `integer`; `type_ok` is `true`. This is a healthy result: nulls are fine here because the field is declared `nullable: true`.
-
-- **`active`** — Values `true, false, true, true, false`. Only two distinct values, so `distinct_count` is 2. `true`/`false` are recognized boolean tokens, so the inferred type is `boolean`, matching the declared `boolean`.
-
-- **`deleted`** — Values `0, 0, 1, 0, 0`. Here is the interesting one. You **declared** it `integer`, but schemascope **infers** `boolean` — because every value is either `0` or `1`, and boolean is the most specific type that fits an all-0/1 column. `distinct_count` is 2 (the values `0` and `1`). Even though declared and inferred differ, `type_ok` is still `true`. That is deliberate: schemascope knows an all-0/1 column often reads as boolean but is a perfectly valid integer, so a declared `integer` accepts an inferred `boolean` without complaint. This is *not* drift.
-
-- **`signup_date`** — Five different `YYYY-MM-DD` dates. `distinct_count` is 5. They match schemascope's strict date format, so the inferred type is `date`, matching the declared `date`.
-
-Every `type_ok` is `true` and nothing is missing, so this data is clean against this schema. If, say, `users.csv` disappeared, the `users` entity would come back `"present": false`; if the `age` column were dropped, its field would come back `"present": false`; if someone put the word `"unknown"` in the `age` column, its inferred type would flip to `string` and `type_ok` would become `false`. **That is what drift looks like in the output.**
-
-### 5. Try the variations
-
-The example schema ships in all four supported formats. They normalize to the same model and produce the same profile — run any of them:
-
-```bash
-schemascope examples/schema.json examples/data
-schemascope examples/schema.yaml examples/data
-schemascope examples/schema.xml  examples/data
-schemascope examples/schema.txt  examples/data
-```
-
-And to get the report as **YAML** instead of JSON, add `-o yaml` (or `--output yaml`):
-
-```bash
-schemascope examples/schema.json examples/data -o yaml
-```
-
-```yaml
-entities:
-- name: users
-  source: users
-  present: true
-  row_count: 5
-  fields:
-  - name: id
-    declared_type: integer
-    column: id
-    present: true
-    row_count: 5
-    null_count: 0
-    null_fraction: 0.0
-    distinct_count: 5
-    inferred_type: integer
-    type_ok: true
-  # ... one block per field, same numbers as the JSON above
-```
-
-### 6. Now run it against a database
-
-The walkthrough used CSV files so you can try it with zero setup — but the main way to use schemascope is straight against a **live database**. Point `DATA` at a SQLAlchemy URL instead of a directory (install the driver for your engine first — `pip install "schemascope[postgres]"`, `[mysql]`, `[mssql]`, `[oracle]`, …):
-
-```bash
-schemascope examples/schema.json "postgresql+psycopg://user:pw@host:5432/app"
-schemascope examples/schema.json "mysql+pymysql://user:pw@host:3306/app"
-```
-
-schemascope maps each schema entity to a table, reads it live, and prints the same report — on any engine SQLAlchemy speaks (PostgreSQL, MySQL/MariaDB, SQL Server/Azure/Fabric, Oracle, Snowflake, BigQuery, Redshift, …). A table the schema names but the database doesn't have comes back `present: false` rather than failing. See [Step 2](#step-2--point-it-at-your-data) for the full list and [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database) for the exact URL + driver per engine.
-
-That is the whole tool. Everything below is detail and reference.
+Everything below is detail and reference.
 
 ---
 

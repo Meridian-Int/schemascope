@@ -1,9 +1,9 @@
 """schemascope — profile a data source against a schema.
 
 Load a schema from any of four formats (JSON / YAML / XML / TXT-DSL) into one
-canonical model, point a connector at a data source (a directory of CSVs, a
-SQLite file, or a live database via a SQLAlchemy URL), and profile the data:
-per-field null counts, distinct counts, the
+canonical model, point a connector at a data source (a database via a SQLAlchemy
+URL, or a local SQLite file), and profile the data: per-field null counts,
+distinct counts, the
 type inferred from the values, and whether that data agrees with the declared
 schema type.
 
@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from .connector import (
     Connector,
-    CsvConnector,
     SqlConnector,
     SqliteConnector,
     open_connector,
@@ -59,7 +58,6 @@ __all__ = [
     "detect_format",
     # connectors
     "Connector",
-    "CsvConnector",
     "SqliteConnector",
     "SqlConnector",
     "open_connector",

@@ -37,7 +37,7 @@ CANONICAL_TYPES = (
 # ``timestamp with time zone`` all resolve. Grouped by target for auditability.
 #
 # Exotic types (json/jsonb/xml, arrays, spatial, and binary blob/bytea/varbinary)
-# map to ``string``: exported to CSV/SQLite they arrive as serialized/hex/base64
+# map to ``string``: read from the database they arrive as serialized/hex/base64
 # text and infer ``string``, so a declared ``string`` accepts them. Ambiguous
 # numerics (``number``, ``numeric``, ``money``) map to ``float`` — the safe
 # superset, since integer data is compatible with a declared float but not the
@@ -141,7 +141,7 @@ class Field:
 
 @dataclass
 class Entity:
-    """A named collection of fields, backed by one table / CSV file."""
+    """A named collection of fields, backed by one database table."""
 
     name: str
     fields: List[Field] = field(default_factory=list)

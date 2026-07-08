@@ -4,10 +4,10 @@ Usage::
 
     schemascope SCHEMA DATA [--output json|yaml] [--schema-format FMT]
 
-Loads ``SCHEMA`` (JSON/YAML/XML/TXT, auto-detected), opens ``DATA`` (a directory
-of CSVs, a ``.db``/``.sqlite`` file, or a live database via a SQLAlchemy URL such
-as ``postgresql+psycopg://user@host/db``), profiles the data against the schema,
-and writes the report to stdout as JSON (default) or YAML.
+Loads ``SCHEMA`` (JSON/YAML/XML/TXT, auto-detected), opens ``DATA`` (a database
+via a SQLAlchemy URL such as ``postgresql+psycopg://user@host/db``, or a local
+``.db``/``.sqlite`` file), profiles the data against the schema, and writes the
+report to stdout as JSON (default) or YAML.
 
 Exit codes: ``0`` success, ``2`` a schema or data-source error (message on
 stderr), plus argparse's own ``2`` for bad arguments.
@@ -35,8 +35,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "data",
         help=(
-            "data source: a directory of CSVs, a .db/.sqlite file, or a "
-            "SQLAlchemy database URL (e.g. postgresql+psycopg://user@host/db)"
+            "data source: a SQLAlchemy database URL (e.g. "
+            "postgresql+psycopg://user@host/db), or a local .db/.sqlite file"
         ),
     )
     parser.add_argument(

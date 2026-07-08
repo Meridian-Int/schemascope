@@ -1,6 +1,7 @@
 """Type inference over observed data values.
 
-Values reach us either as strings (CSV) or native Python (SQLite). Every
+Values reach us either as text or as native Python objects, depending on the
+database driver. Every
 predicate accepts ``Any`` and stringifies when it needs to, so inference is
 uniform across sources. :func:`infer_type` picks the *most specific* canonical
 type that **all** observed values satisfy — strict on purpose, so any mixed
