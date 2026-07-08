@@ -1,10 +1,10 @@
 # schemascope
 
-**schemascope profiles tabular data against a schema you already have, so you can catch schema drift before it bites you.**
+**schemascope profiles a database against a schema you already have, so you can catch schema drift before it bites you.**
 
-In plainer words: you give it the *shape* your data is supposed to have, and the *data* itself, and it tells you — per table and per column — what actually showed up. Is every expected table and column present? Where are the nulls? How many distinct values? What type do the real values look like, and does that still match the type you declared? That is the whole job. schemascope is a **read-only profiler and drift detector**: it does **not** modify data, create tables, enforce constraints, or validate every row against a rich rule language.
+In plainer words: you give it the *shape* your data is supposed to have, and a *database* to look at, and it tells you — per table and per column — what actually showed up. Is every expected table and column present? Where are the nulls? How many distinct values? What type do the real values look like, and does that still match the type you declared? That is the whole job. schemascope is a **read-only profiler and drift detector**: it does **not** modify data, create tables, enforce constraints, or validate every row against a rich rule language. It only ever **reads**.
 
-To do that, schemascope needs two things from you: your **data**, and a **schema**.
+To do that, schemascope needs two things from you: a **database**, and a **schema**.
 
 This manual is written to be read top to bottom with nobody to ask; every command can be copied and pasted as-is. If a term is unfamiliar (entity, field, drift, inferred type), the [Concepts and glossary](#concepts-and-glossary) section defines each one in a sentence — but you can also just start reading and pick them up as you go.
 
@@ -14,10 +14,10 @@ This manual is written to be read top to bottom with nobody to ask; every comman
 
 - [The two things schemascope needs](#the-two-things-schemascope-needs)
 - [Install](#install)
-- [Your first run in 5 minutes](#your-first-run-in-5-minutes)
+- [Getting started — profile your database](#getting-started--profile-your-database)
 - [The core idea](#the-core-idea)
 - [Step 1 — Give it your schema](#step-1--give-it-your-schema)
-- [Step 2 — Point it at your data](#step-2--point-it-at-your-data)
+- [Step 2 — Point it at your database](#step-2--point-it-at-your-database)
 - [Concepts and glossary](#concepts-and-glossary)
 - [Schema Model](#schema-model)
 - [Schema Formats](#schema-formats)
@@ -32,7 +32,7 @@ This manual is written to be read top to bottom with nobody to ask; every comman
 - [Requirements](#requirements)
 - [Development](#development)
 - [License](#license)
-- [Appendix A: Generating a schemascope schema from your database](#appendix-a-generating-a-schemascope-schema-from-your-database)
+- [Appendix A: Reading your schema and connecting, engine by engine](#appendix-a-reading-your-schema-and-connecting-engine-by-engine)
 - [Appendix B: Type-mapping cheat sheet](#appendix-b-type-mapping-cheat-sheet)
 
 ---
@@ -41,26 +41,25 @@ This manual is written to be read top to bottom with nobody to ask; every comman
 
 schemascope only ever looks at two inputs. Get these two things right and everything else follows.
 
-### 1. Your data — the rows
+### 1. Your database — the rows
 
 This is the actual content: the customers, the orders, the users. A tiny example, five rows of a `users` table:
 
-```text
-id,email,age,active,deleted,signup_date
-1,alice@example.com,31,true,0,2021-03-05
-2,bob@example.com,,false,0,2021-07-19
-3,carol@example.com,27,true,1,2022-01-02
-4,dave@example.com,44,true,0,2022-11-30
-5,erin@example.com,,false,0,2023-05-14
-```
+| id | email | age | active | deleted | signup_date |
+| --- | --- | --- | --- | --- | --- |
+| 1 | alice@example.com | 31 | true | 0 | 2021-03-05 |
+| 2 | bob@example.com | | false | 0 | 2021-07-19 |
+| 3 | carol@example.com | 27 | true | 1 | 2022-01-02 |
+| 4 | dave@example.com | 44 | true | 0 | 2022-11-30 |
+| 5 | erin@example.com | | false | 0 | 2023-05-14 |
 
-> **The single most important fact in this manual:** schemascope reads three kinds of data source — a **directory of CSV files** (one `.csv` per table), a single **SQLite file** (`.db`, `.sqlite`, `.sqlite3`), or a **live database** reached through a **SQLAlchemy URL** (PostgreSQL, MySQL/MariaDB, SQL Server/Azure/Fabric, Oracle, SQLite, and any other engine SQLAlchemy speaks). Running it straight against your database — `schemascope schema.json "postgresql+psycopg://user@host/db"` — is the main way to use it; you install the small driver for your engine (see [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database)) and pass the URL. You always give it a **schema** too; the easiest way to get one is straight out of the same database (also in Appendix A).
+> **The single most important fact in this manual:** schemascope reads two kinds of data source — a **live database** reached through a **SQLAlchemy URL** (PostgreSQL, MySQL/MariaDB, SQL Server/Azure/Fabric, Oracle, Snowflake, BigQuery, and any other engine SQLAlchemy speaks), or a single local **SQLite file** (`.db`, `.sqlite`, `.sqlite3`). Running it straight against your database — `schemascope schema.json "postgresql+psycopg://user@host/db"` — is the main way to use it; you install the small driver for your engine (see [Appendix A](#appendix-a-reading-your-schema-and-connecting-engine-by-engine)) and pass the URL. schemascope connects, reads, and reports — it **never writes**. You always give it a **schema** too; the easiest way to get one is straight out of the same database (also in Appendix A).
 
 ### 2. A schema — the shape, not the rows
 
 A schema is a small plain-text file that describes what your data is *supposed* to look like: which entities (tables) exist, which fields (columns) each has, and what type each field should be. It is **not** SQL. schemascope reads schemas written as **JSON, YAML, XML, or a small TXT DSL** — never a `CREATE TABLE` statement.
 
-Here is a schema for the data above. In JSON:
+Here is a schema for the table above. In JSON:
 
 ```json
 {
@@ -100,11 +99,11 @@ You are in one of three situations. Find yours.
 
 | Your situation | What you do |
 | --- | --- |
-| **Your data is in a database** | The database already knows its own structure. Read it (its DDL, its `information_schema`, or an introspection command) and translate the column types into a small schemascope schema. [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database) has the exact commands per engine. |
+| **Your data is in a database** | The database already knows its own structure. Read it (its DDL, its `information_schema`, or an introspection command) and translate the column types into a small schemascope schema. [Appendix A](#appendix-a-reading-your-schema-and-connecting-engine-by-engine) has the exact commands per engine. |
 | **Someone handed you a schema file** (`.json` / `.yaml` / `.xml` / `.txt`) | You are ready. Go to [Install](#install). |
-| **You have only data and no schema** | Write one by hand — it is tiny (one entity, a few fields). schemascope does **not** infer a schema from your data, so this step is yours. See [Step 1 — Give it your schema](#step-1--give-it-your-schema). |
+| **You have only a database and no schema** | Write one by hand — it is tiny (one entity, a few fields). schemascope does **not** infer a schema from your data, so this step is yours. See [Step 1 — Give it your schema](#step-1--give-it-your-schema). |
 
-> **Short version:** if your data lives in a real database, you do two things — read its structure into a small schemascope schema, and export its rows to CSV or SQLite. Both halves are spelled out per platform in [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database).
+> **Short version:** if your data lives in a real database, you do two things — read its structure into a small schemascope schema, and point schemascope at the live database with its SQLAlchemy URL. Both halves are spelled out per platform in [Appendix A](#appendix-a-reading-your-schema-and-connecting-engine-by-engine).
 
 ---
 
@@ -128,9 +127,9 @@ Confirm it landed on your `PATH`:
 schemascope --version
 ```
 
-You should see a line like `schemascope 0.2.0`. If instead you get "command not found", jump to [Troubleshooting](#troubleshooting) — the usual fix is to run it as `python -m schemascope` instead.
+You should see a version like `schemascope 0.2.0` (0.2.0 or later). If instead you get "command not found", jump to [Troubleshooting](#troubleshooting) — the usual fix is to run it as `python -m schemascope` instead.
 
-PyYAML is installed automatically with the package; there are no other runtime dependencies.
+**PyYAML** and **SQLAlchemy** are installed automatically with the package. The only thing you may add is a **database driver**, and only for the engine you connect to — install it as an extra, e.g. `pip install "schemascope[postgres]"`. SQLite needs no driver at all.
 
 To work on schemascope from a **source checkout** instead:
 
@@ -161,11 +160,11 @@ schemascope reaches your database through SQLAlchemy, so add the driver for your
 pip install "schemascope[postgres]"    # or [mysql], [mssql], [oracle], [snowflake], [bigquery], …
 ```
 
-The full engine list — with the URL prefix for each — is in [Point it at your data → SQL database](#sql-database-any-sqlalchemy-url).
+The full engine list — with the URL prefix for each — is in [Point it at your database → SQL database](#sql-database-any-sqlalchemy-url).
 
 ### 2. Give it a schema
 
-A **schema** is a small file that lists the tables you expect (schemascope calls each an *entity*), the columns in each (its *fields*), and the type every column should hold. You normally **generate it from your database's own structure** rather than writing it by hand — [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database) has the exact command for your engine. However you obtain it, a schema for a `users` table reads like this (JSON; YAML, XML, and a terse TXT DSL are also supported):
+A **schema** is a small file that lists the tables you expect (schemascope calls each an *entity*), the columns in each (its *fields*), and the type every column should hold. You normally **generate it from your database's own structure** rather than writing it by hand — [Appendix A](#appendix-a-reading-your-schema-and-connecting-engine-by-engine) has the exact command for your engine. However you obtain it, a schema for a `users` table reads like this (JSON; YAML, XML, and a terse TXT DSL are also supported):
 
 ```json
 {
@@ -231,7 +230,7 @@ Everything below is detail and reference.
 
 Hold on to one mental model:
 
-> **schema + data → report.** You supply the schema (what the data *should* look like) and the data (what it *actually* looks like). schemascope compares them and prints a report. There is one command, no subcommands, no state left behind on disk.
+> **schema + database → report.** You supply the schema (what the data *should* look like) and the database (what it *actually* looks like). schemascope compares them and prints a report. There is one command, no subcommands, no state left behind on disk, and nothing written back to your database.
 
 The command is always:
 
@@ -244,7 +243,7 @@ schemascope SCHEMA DATA [--output json|yaml] [--schema-format json|yaml|xml|txt]
 | Token | Kind | Meaning | Default |
 | --- | --- | --- | --- |
 | `SCHEMA` | argument (required) | Path to a JSON / YAML / XML / TXT schema file. | — |
-| `DATA` | argument (required) | A **directory of CSV files**, a **SQLite file** (`.db`/`.sqlite`/`.sqlite3`), or a **SQLAlchemy database URL** (`postgresql+psycopg://…`, `mysql+pymysql://…`, `mssql+pyodbc://…`, `oracle+oracledb://…`, `sqlite:////…`). | — |
+| `DATA` | argument (required) | A **SQLAlchemy database URL** (`postgresql+psycopg://…`, `mysql+pymysql://…`, `mssql+pyodbc://…`, `oracle+oracledb://…`, `snowflake://…`, `sqlite:////…`, …) or a local **SQLite file** (`.db`/`.sqlite`/`.sqlite3`). | — |
 | `-o`, `--output` | option | Report format: `json` or `yaml`. | `json` |
 | `--schema-format` | option | Force the schema format (`json`/`yaml`/`xml`/`txt`) instead of auto-detecting. | auto-detect |
 | `--db-schema` | option | Database schema/namespace to read tables from when `DATA` is a URL (Postgres `public`, SQL Server `dbo`, …). | (engine default) |
@@ -254,7 +253,7 @@ schemascope SCHEMA DATA [--output json|yaml] [--schema-format json|yaml|xml|txt]
 `python -m schemascope ...` behaves identically to the `schemascope` console script:
 
 ```bash
-python -m schemascope examples/schema.json examples/data --output yaml
+python -m schemascope users-schema.json "postgresql+psycopg://user:pw@host/app" --output yaml
 ```
 
 ### Exit codes
@@ -264,7 +263,7 @@ Keep these two in mind when scripting schemascope into a pipeline:
 - **`0`** — success. The report was printed to **stdout**.
 - **`2`** — something was wrong with your inputs: a **schema error**, a **data-source error**, or **bad CLI arguments**. The one-line message goes to **stderr** (`schema error: ...` or `data source error: ...`). argparse also uses exit code `2` for its own usage errors, such as a missing argument.
 
-> **Rule to remember:** the report goes to **stdout**, error messages go to **stderr**. You can redirect them separately (`schemascope schema.json data/ > report.json 2> errors.log`). A `present: false` or `type_ok: false` inside a successful report is **not** an error — it is drift, and the exit code is still `0`.
+> **Rule to remember:** the report goes to **stdout**, error messages go to **stderr**. You can redirect them separately (`schemascope schema.json "postgresql+psycopg://user@host/app" > report.json 2> errors.log`). A `present: false` or `type_ok: false` inside a successful report is **not** an error — it is drift, and the exit code is still `0`.
 
 ---
 
@@ -276,9 +275,9 @@ A schema is a small text file listing your entities and their fields. You write 
 
 | Your situation | What to do |
 | --- | --- |
-| Someone gave you a schema file already | Skip ahead — you have Step 1 done. Go to [Step 2](#step-2--point-it-at-your-data). |
-| Your data is in a database | Read its structure and translate the types into a small schema. [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database) has the per-engine commands. |
-| You have only data, no schema | Hand-write one. Start from the smallest valid schema below and add fields. |
+| Someone gave you a schema file already | Skip ahead — you have Step 1 done. Go to [Step 2](#step-2--point-it-at-your-database). |
+| Your data is in a database | Read its structure and translate the types into a small schema. [Appendix A](#appendix-a-reading-your-schema-and-connecting-engine-by-engine) has the per-engine commands. |
+| You have only a database, no schema | Hand-write one. Start from the smallest valid schema below and add fields. |
 
 ### The smallest valid schema, then build up
 
@@ -365,9 +364,9 @@ In the DSL, `pk` marks the primary key and `null` marks a nullable field. The fu
 Every entity has a `name`. It may *also* have a `source`. The difference:
 
 - `name` is what the entity is called in your schema and in the report.
-- `source` is the **backing store** schemascope actually reads: the CSV file stem or the SQLite table name.
+- `source` is the **backing table** schemascope actually reads: the database (or SQLite) table name.
 
-If you set no `source`, schemascope uses the `name`. So an entity named `users` reads `users.csv` (or a SQLite table named `users`). But if your export produced a file named `app_users.csv` while you want the entity called `users`, set a `source`:
+If you set no `source`, schemascope uses the `name`. So an entity named `users` reads a table named `users`. But if the real table is named `app_users` while you want the entity called `users`, set a `source`:
 
 ```json
 {
@@ -377,43 +376,29 @@ If you set no `source`, schemascope uses the `name`. So an entity named `users` 
 }
 ```
 
-Now the entity is reported as `users` but the data is read from `app_users.csv` (or a SQLite table `app_users`). Note: the TXT DSL cannot express `source`; use JSON, YAML, or XML if you need it.
+Now the entity is reported as `users` but the data is read from a table named `app_users`. Note: the TXT DSL cannot express `source`; use JSON, YAML, or XML if you need it.
 
 ### Forcing the format
 
 If your schema file has a misleading or missing extension, force the parser with `--schema-format`:
 
 ```bash
-schemascope schemafile data/ --schema-format yaml
+schemascope schemafile "postgresql+psycopg://user@host/app" --schema-format yaml
 ```
 
 Accepted values are `json`, `yaml`, `xml`, and `txt`.
 
-> **Step 1 is done when** `schemascope <schema> <data>` runs without a `schema error:` and you see your entities and fields listed in the report — even if some are `present: false`. That means schemascope understood your schema.
+> **Step 1 is done when** `schemascope <schema> <database-url>` runs without a `schema error:` and you see your entities and fields listed in the report — even if some are `present: false`. That means schemascope understood your schema.
 
-> **Next:** if your schema needs to come out of a real database, see [Appendix A — Generating a schemascope schema from your database](#appendix-a-generating-a-schemascope-schema-from-your-database). It gives the exact read-the-structure command for every major engine.
+> **Next:** if your schema needs to come out of a real database, see [Appendix A — Reading your schema and connecting, engine by engine](#appendix-a-reading-your-schema-and-connecting-engine-by-engine). It gives the exact read-the-structure command and the connection URL for every major engine.
 
 ---
 
-## Step 2 — Point it at your data
+## Step 2 — Point it at your database
 
-The `DATA` argument is one of three things.
+The `DATA` argument is one of two things.
 
-**1. A directory of CSV files** — one `.csv` per entity:
-
-```text
-data/
-  users.csv
-  orders.csv
-```
-
-**2. A single SQLite file** — one table per entity:
-
-```bash
-schemascope schema.yaml warehouse.sqlite
-```
-
-**3. A live database** — any SQLAlchemy URL, one table per entity. This is the main way to use schemascope: point it straight at your database.
+**1. A live database** — any SQLAlchemy URL, one table per entity. This is the main way to use schemascope: point it straight at your database.
 
 ```bash
 schemascope schema.json "postgresql+psycopg://user:pw@host:5432/shop"
@@ -422,21 +407,25 @@ schemascope schema.json "mssql+pyodbc://user:pw@host/shop?driver=ODBC+Driver+18+
 schemascope schema.json "oracle+oracledb://user:pw@host:1521/?service_name=XEPDB1"
 ```
 
-Install the driver for your engine first — `pip install "schemascope[postgres]"` (or `[mysql]` / `[mssql]` / `[oracle]`); SQLite needs none. schemascope recognizes a database source by the `://` in the URL. Add `--db-schema public` (or `dbo`, …) to target a specific namespace. Per-engine URLs and drivers are in [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database).
+Install the driver for your engine first — `pip install "schemascope[postgres]"` (or `[mysql]` / `[mssql]` / `[oracle]` / …); SQLite needs none. schemascope recognizes a database source by the `://` in the URL. Add `--db-schema public` (or `dbo`, …) to target a specific namespace. Per-engine URLs and drivers are in [Data Sources → SQL database](#sql-database-any-sqlalchemy-url) and [Appendix A](#appendix-a-reading-your-schema-and-connecting-engine-by-engine).
 
-### The filename / entity matching rule
+**2. A single SQLite file** — one table per entity:
 
-schemascope matches an entity to its backing store by the entity's **source-or-name**:
+```bash
+schemascope schema.yaml warehouse.sqlite
+```
 
-- entity `users` → file `users.csv` (CSV) or table `users` (SQLite);
-- if the entity has `source: app_users`, it reads `app_users.csv` or table `app_users` instead;
-- if the backing file/table is not found, the entity is reported with `present: false` rather than silently dropped.
+### The table / entity matching rule
 
-Fields are matched to columns by name: exact match first, then a case-insensitive fallback (so `Email` in the schema matches `email` in the data); if nothing matches, the field is reported `present: false`.
+schemascope matches an entity to its backing table by the entity's **source-or-name**:
 
-> **Important:** for CSV, the `DATA` argument must be the **directory**, not a `.csv` file. Pointing schemascope at `data/users.csv` fails with a data-source error; point it at `data/`.
+- entity `users` → table `users`;
+- if the entity has `source: app_users`, it reads table `app_users` instead;
+- if the backing table is not found, the entity is reported with `present: false` rather than silently dropped.
 
-The full read behavior (BOM handling, null cells, duplicate headers, short rows, SQLite native types) is in [Data Sources](#data-sources).
+Fields are matched to columns by name: exact match first, then a case-insensitive fallback (so `Email` in the schema matches `email` in the database); if nothing matches, the field is reported `present: false`.
+
+The full read behavior (case-insensitive table resolution, dialect-quoted identifiers, streaming reads, SQLite native types) is in [Data Sources](#data-sources).
 
 ---
 
@@ -444,17 +433,17 @@ The full read behavior (BOM handling, null cells, duplicate headers, short rows,
 
 A few terms are used throughout this manual. Each is one or two sentences.
 
-- **Entity** — one table. In a CSV data source, one entity maps to one CSV file (`users` entity → `users.csv`). In a SQLite data source, one entity maps to one table.
+- **Entity** — one table. One entity maps to one database table (`users` entity → `users` table), or one table in a SQLite file.
 - **Field** — one column of an entity (for example, `email` or `age`).
-- **Source** — the *backing store* name schemascope actually reads for an entity: the CSV file stem or the SQLite table name. It defaults to the entity's `name` but can be overridden with a `source` value (see [`source` vs `name`](#source-vs-name)).
+- **Source** — the *backing table* name schemascope actually reads for an entity. It defaults to the entity's `name` but can be overridden with a `source` value (see [`source` vs `name`](#source-vs-name)).
 - **Declared type** — the type you *wrote* in your schema for a field (for example, `integer`). schemascope normalizes it to one of seven canonical types.
-- **Inferred type** — the type schemascope *deduces from the actual data values* it scans in the CSV/SQLite source. Declared and inferred can differ; comparing them is the point of the tool.
-- **Null** — a missing value. In CSV, an empty cell (or a whitespace-only cell) counts as null. In SQLite, a real `NULL` counts as null.
+- **Inferred type** — the type schemascope *deduces from the actual data values* it scans in the database. Declared and inferred can differ; comparing them is the point of the tool.
+- **Null** — a missing value. A real `NULL` in the database (or SQLite) counts as null.
 - **null_fraction** — `null_count / row_count` for a field: the share of rows where that field was null. `0.4` means 40% of rows were null.
 - **Distinct count** — the number of *different* non-null values seen in a field. A column of `0,0,1,0,0` has a distinct count of 2 (the values `0` and `1`).
 - **Schema drift** — when the data no longer matches what the schema expects: a table went missing, a column disappeared, nulls appeared where they should not, or a column's values stopped looking like the declared type. Detecting drift is what schemascope is for.
-- **Connector** — schemascope's internal reader for a data source. There are two: a CSV-directory connector and a SQLite connector. You never construct these by hand from the CLI; the tool picks one for you based on what you point it at.
-- **Present** — whether a thing was actually found. An entity is `present: true` if its backing file/table exists; a field is `present: true` if a matching column exists. When something is missing, schemascope keeps it in the report with `present: false` instead of dropping it silently — that is how drift stays visible.
+- **Connector** — schemascope's internal reader for a data source. There are two: a SQL-database connector (any SQLAlchemy URL) and a SQLite-file connector. You never construct these by hand from the CLI; the tool picks one for you based on what you point it at.
+- **Present** — whether a thing was actually found. An entity is `present: true` if its backing table exists; a field is `present: true` if a matching column exists. When something is missing, schemascope keeps it in the report with `present: false` instead of dropping it silently — that is how drift stays visible.
 
 ---
 
@@ -467,7 +456,7 @@ Every schema format is normalized into the same model:
 - Each entity has a `name`, optional `source`, optional `description`, and one or more fields.
 - Each field has a `name`, a canonical `type`, `nullable`, `primary_key`, and optional `description`.
 
-The profiler reads data from `entity.source` when it is set; otherwise it uses `entity.name`. For CSV data, that means `<source>.csv`. For SQLite data, that means a table named `<source>`.
+The profiler reads data from `entity.source` when it is set; otherwise it uses `entity.name`. Either way that resolves to a database (or SQLite) table named `<source>`.
 
 Validation rules (violating any of these is a schema error, exit code `2`):
 
@@ -555,12 +544,12 @@ TXT does **not** represent schema-level `name` or `version`, entity `source`, or
 JSON and YAML support this fuller shape:
 
 ```yaml
-name: customer_exports
+name: customer_tables
 version: "2026-07"
 entities:
   - name: users
     source: app_users
-    description: User account export
+    description: User accounts table
     fields:
       - name: id
         type: integer
@@ -576,8 +565,8 @@ entities:
 XML supports the same metadata as attributes:
 
 ```xml
-<schema name="customer_exports" version="2026-07">
-  <entity name="users" source="app_users" description="User account export">
+<schema name="customer_tables" version="2026-07">
+  <entity name="users" source="app_users" description="User accounts table">
     <field name="id" type="integer" primary_key="true" description="Internal user id"/>
     <field name="email" type="varchar"/>
     <field name="created_at" type="timestamp" nullable="false"/>
@@ -603,7 +592,7 @@ Canonical type | Accepted aliases (case-insensitive; `(…)` parameters stripped
 
 The seven canonical types are `string`, `integer`, `float`, `boolean`, `date`, `datetime`, and `unknown` — those are the only type names schemascope reasons about internally. Every alias above simply normalizes to one of them.
 
-Exotic types (`json`, `jsonb`, `blob`, `bytea`, `geometry`, `array`, …) map to `string` on purpose: exported to CSV/JSONL/SQLite their values arrive as serialized/hex/base64 text and infer as `string`, so a declared `string` accepts them. Only a spelling nothing above covers falls through to `unknown` — not a crash, but you lose the drift check for that one field (a declared `unknown` is compatible with any inferred type). The full per-database reference is [Appendix B](#appendix-b-type-mapping-cheat-sheet).
+Exotic types (`json`, `jsonb`, `blob`, `bytea`, `geometry`, `array`, …) map to `string` on purpose: read from the database their values arrive as serialized/hex/base64 text and infer as `string`, so a declared `string` accepts them. Only a spelling nothing above covers falls through to `unknown` — not a crash, but you lose the drift check for that one field (a declared `unknown` is compatible with any inferred type). The full per-database reference is [Appendix B](#appendix-b-type-mapping-cheat-sheet).
 
 > **Rule to remember:** a primary key is treated as not nullable unless `nullable` is explicitly set. For example, `{"name": "id", "type": "int", "primary_key": true}` normalizes to an integer field with `nullable: false`.
 
@@ -611,52 +600,7 @@ Exotic types (`json`, `jsonb`, `blob`, `bytea`, `geometry`, `array`, …) map to
 
 ## Data Sources
 
-### CSV directory
-
-Pass a directory that contains one CSV file per entity:
-
-```text
-data/
-  users.csv
-  orders.csv
-```
-
-If the schema entity is named `users`, `schemascope` looks for `users.csv`. If the entity has `source: app_users`, it looks for `app_users.csv`.
-
-CSV behavior:
-
-- The first row is the header.
-- Files are read as `utf-8-sig`, so a UTF-8 BOM (common in Excel/Windows exports) is handled automatically.
-- **Duplicate header names are rejected** (a data-source error).
-- Empty cells count as nulls.
-- Whitespace-only cells also count as nulls.
-- Extra cells beyond the header are ignored.
-- Short rows fill missing cells as nulls.
-
-The CLI uses only the default CSV null token: an empty string after stripping. From Python, you can opt into more null spellings:
-
-```python
-from schemascope import CsvConnector, load_schema, profile
-
-schema = load_schema("schema.json")
-connector = CsvConnector("data", null_tokens={"", "NULL", "NA", "N/A"})
-try:
-    report = profile(schema, connector)
-finally:
-    connector.close()
-```
-
-> **Important:** the `DATA` argument must be the **directory**, not a `.csv` file. Pointing schemascope at `data/users.csv` fails; point it at `data/`.
-
-### SQLite database
-
-Pass a `.db`, `.sqlite`, or `.sqlite3` file:
-
-```bash
-schemascope schema.yaml warehouse.sqlite
-```
-
-Each entity maps to a table named by `entity.source` or `entity.name`. SQLite values are read with their native Python types where SQLite provides them. A file that is not actually a SQLite database fails cleanly as a data-source error.
+schemascope reads two kinds of data source: a **live SQL database** (any SQLAlchemy URL — the primary path) and a **local SQLite file**. It **only reads**, and streams rows so a large table never loads fully into memory.
 
 ### SQL database (any SQLAlchemy URL)
 
@@ -675,7 +619,7 @@ schemascope schema.json "sqlite:////abs/path/app.db"
 | Engine | URL prefix | Install |
 | --- | --- | --- |
 | PostgreSQL (RDS/Aurora/Cloud SQL/Supabase/Neon) | `postgresql+psycopg://` | `pip install "schemascope[postgres]"` |
-| MySQL / MariaDB | `mysql+pymysql://` | `pip install "schemascope[mysql]"` |
+| MySQL / MariaDB | `mysql+pymysql://` | `pip install "schemascope[mysql]"` (or `[mariadb]`) |
 | SQL Server / Azure SQL / Fabric | `mssql+pyodbc://…?driver=ODBC+Driver+18+for+SQL+Server` | `pip install "schemascope[mssql]"` |
 | Oracle | `oracle+oracledb://` | `pip install "schemascope[oracle]"` |
 | SQLite | `sqlite:///…` | built-in |
@@ -698,6 +642,16 @@ Behavior:
 - Tables are **read, never written**, and rows **stream**, so a large table never loads fully into memory.
 - A table (or column) the schema names but the database does not have is reported `present: false` — schemascope profiles what exists and flags the rest as drift, rather than failing.
 
+### SQLite database
+
+Pass a `.db`, `.sqlite`, or `.sqlite3` file:
+
+```bash
+schemascope schema.yaml warehouse.sqlite
+```
+
+Each entity maps to a table named by `entity.source` or `entity.name`. SQLite values are read with their native Python types where SQLite provides them. A file that is not actually a SQLite database fails cleanly as a data-source error. (You can also point schemascope at the same file with a URL: `sqlite:////abs/path/warehouse.sqlite`.)
+
 ### Column matching
 
 Fields are matched to source columns by name:
@@ -706,7 +660,7 @@ Fields are matched to source columns by name:
 2. Case-insensitive fallback (so `Email` in the schema matches `email` in the data, and vice versa).
 3. If no column matches, the field is reported with `present: false`.
 
-Entity/table/file matching uses the entity source or name. Missing entities are reported with `present: false` rather than silently dropped.
+Entity/table matching uses the entity source or name. Missing entities are reported with `present: false` rather than silently dropped.
 
 ---
 
@@ -725,8 +679,8 @@ Each entity report contains:
 Field | Meaning
 --- | ---
 `name` | Schema entity name
-`source` | CSV file stem or SQLite table name used for this entity
-`present` | Whether the backing CSV file or SQLite table exists
+`source` | Database (or SQLite) table name used for this entity
+`present` | Whether the backing table exists
 `row_count` | Number of rows scanned for this entity
 `fields` | Per-field profile objects
 
@@ -753,7 +707,7 @@ Missing entities and missing columns stay in the report with `present: false` (a
 
 `schemascope` infers one type per field from observed non-null values.
 
-Inference checks *every* non-null value for each field, in a single streaming pass. A type is chosen only when **every** value matches that type, so a column that drifts to a non-conforming value anywhere in the file — not just in the first few rows — is reported as a mismatch. If no specific type matches, the inferred type is `string`. If there are no non-null values at all, the inferred type is `unknown`.
+Inference checks *every* non-null value for each field, in a single streaming pass. A type is chosen only when **every** value matches that type, so a column that drifts to a non-conforming value anywhere in the table — not just in the first few rows — is reported as a mismatch. If no specific type matches, the inferred type is `string`. If there are no non-null values at all, the inferred type is `unknown`.
 
 Inference order (most specific first):
 
@@ -772,17 +726,19 @@ Recognized values:
 - **Date:** strict `YYYY-MM-DD` calendar dates.
 - **Datetime:** `YYYY-MM-DD` followed by a space or `T` and an `HH:MM` or `HH:MM:SS` time. Fractional seconds and a trailing `Z` are accepted.
 
-> **Watch out:** because inference is strict, values that *look* like a type but do not match the exact format fall through to `string`. A timestamp with a numeric zone offset such as `2021-03-05 10:00:00+00` does **not** match the datetime pattern (only a trailing `Z` is stripped), so a column of such values infers as `string`. A time-of-day like `10:30:00` is not a recognized type and also infers as `string`. If you know a column will hold these, either declare it `string`, or reformat on export (see [Appendix A](#appendix-a-generating-a-schemascope-schema-from-your-database)).
+> **Watch out:** because inference is strict, values that *look* like a type but do not match the exact format fall through to `string`. A timestamp with a numeric zone offset such as `2021-03-05 10:00:00+00` does **not** match the datetime pattern (only a trailing `Z` is stripped), so a column of such values infers as `string`. A time-of-day like `10:30:00` is not a recognized type and also infers as `string`. If you know a column will hold these, either declare it `string`, or return it in the strict format (for example via a view — see [Appendix A](#appendix-a-reading-your-schema-and-connecting-engine-by-engine)).
 
 Compatibility is intentionally lenient. `type_ok` is `true` when:
 
 - Declared and inferred types are **equal**.
 - Declared `string` accepts **any** inferred type.
 - Declared `float` accepts inferred `integer`.
-- Declared `integer` accepts inferred `boolean` (an all-0/1 column often infers as boolean but is still valid integer data — this is the `deleted` field in the walkthrough).
+- Declared `integer` accepts inferred `boolean` (an all-0/1 column often infers as boolean but is still valid integer data — this is the `deleted` field in the worked example).
 - `unknown` on either side is treated as compatible.
 
 Everything else is a type mismatch (`type_ok: false`). Note the asymmetry: a declared `boolean` whose data infers `integer` (values outside 0/1) *is* flagged.
+
+> **Robustness:** schemascope has been exercised against 300+ generated, migrated database schemas across two engines (SQLite and DuckDB), streaming well over a million values — it never crashes and reports drift correctly.
 
 ---
 
@@ -793,8 +749,8 @@ The main API is available from the top-level package:
 ```python
 import schemascope
 
-schema = schemascope.load_schema("examples/schema.json")
-connector = schemascope.open_connector("examples/data")
+schema = schemascope.load_schema("users-schema.json")
+connector = schemascope.open_connector("postgresql+psycopg://user:pw@host:5432/app")
 
 try:
     report = schemascope.profile(schema, connector)
@@ -820,7 +776,7 @@ Common imports:
 
 ```python
 from schemascope import (
-    CsvConnector,
+    SqlConnector,
     SqliteConnector,
     load_schema,
     open_connector,
@@ -828,12 +784,12 @@ from schemascope import (
 )
 ```
 
-`open_connector(path)` chooses a connector automatically:
+`open_connector(path, db_schema=None)` chooses a connector automatically:
 
-- Directory → `CsvConnector`
-- `.db`, `.sqlite`, `.sqlite3` file → `SqliteConnector`
+- A **SQLAlchemy URL** (any string containing `://`) → `SqlConnector` (a live database)
+- A `.db`, `.sqlite`, `.sqlite3` file → `SqliteConnector`
 
-The caller owns connector lifecycle — close connectors when finished, ideally in a `try/finally`.
+`db_schema` names a database schema/namespace (Postgres `public`, SQL Server `dbo`, …) and is used only by `SqlConnector`. The caller owns connector lifecycle — close connectors when finished, ideally in a `try/finally`.
 
 Also exported from the top-level package: `Schema`, `Entity`, `Field`, `SchemaError`, `ConnectorError`, `normalize_type`, `infer_type`, `type_compatible`, `detect_format`, `store_name`, `__version__`, and `CANONICAL_TYPES`.
 
@@ -861,7 +817,7 @@ For unknown extensions, content is sniffed:
 Use `--schema-format` when a file extension is misleading or absent:
 
 ```bash
-schemascope schemafile data/ --schema-format yaml
+schemascope schemafile "postgresql+psycopg://user@host/app" --schema-format yaml
 ```
 
 ---
@@ -872,9 +828,11 @@ Almost every failure exits with code `2` and prints a one-line message to **stde
 
 Symptom (stderr message) | What it means | Fix
 --- | --- | ---
-`data source error: cannot determine a connector for ... (expected a CSV directory or a .db/.sqlite/.sqlite3 file)` | You pointed `DATA` at something that is neither a directory nor a SQLite file — most commonly a single `.csv` file. | Point at the **directory** that contains your CSVs (`data/`, not `data/users.csv`), or rename/verify your SQLite file ends in `.db`/`.sqlite`/`.sqlite3`.
-`data source error: CSV source is not a directory: ...` | (Python API only, via `CsvConnector`) you passed a file path where a directory was expected. | Pass the CSV **directory**.
-`data source error: CSV file for 'users' has a duplicate column: 'id'` | A CSV header lists the same column name twice. schemascope refuses to guess which one you meant. | De-duplicate the header row in that CSV; each column name must be unique.
+`data source error: cannot determine a connector for ... (expected a SQLAlchemy database URL such as postgresql+psycopg://user@host/db, or a .db/.sqlite/.sqlite3 SQLite file)` | You pointed `DATA` at something that is neither a SQLAlchemy URL (no `://`) nor a SQLite file. | Pass a database URL (`postgresql+psycopg://user@host/db`, `mysql+pymysql://…`, …), or a `.db`/`.sqlite`/`.sqlite3` file.
+`data source error: reading a database URL needs SQLAlchemy — install it with 'pip install SQLAlchemy' ...` | SQLAlchemy is not importable. It ships with schemascope, so this normally only happens in a broken environment. | Reinstall schemascope (`pip install --force-reinstall schemascope`), which pulls in SQLAlchemy.
+`data source error: cannot open database '...': ...` | The URL is malformed, or the dialect/driver for that engine is not installed. | Check the URL, and install the engine's extra, e.g. `pip install "schemascope[postgres]"`.
+`data source error: cannot connect to '...': ...` | The engine was created but the connection failed — wrong host/port, bad credentials, TLS, or network/VPN. | Verify host, port, database, and credentials; confirm the server is reachable from where schemascope runs.
+`data source error: cannot read table '...': ...` | Connected, but reading a specific table failed (permissions, or the table changed mid-run). | Grant read access to that table, or re-check its name/namespace (`--db-schema`).
 `data source error: cannot open SQLite database ...: file is not a database` | The `.db`/`.sqlite` file you passed is not actually a SQLite database (wrong file, corrupt, or a text file renamed). | Rebuild the SQLite file, or point at the correct one. Verify with `sqlite3 file.db ".tables"`.
 `data source error: SQLite database not found: ...` | The SQLite path does not exist. | Check the path.
 `schema error: schema is missing the 'entities' key` | Your JSON/YAML parsed fine but has no top-level `entities`. | Add an `entities:` list; every schema needs at least one entity.
@@ -890,8 +848,8 @@ Wrong format auto-detected (e.g. a DSL file read as YAML) | The file has no reco
 
 These are **not** crashes — they are the profile telling you something.
 
-- **`"present": false` on an entity** — the backing CSV file or SQLite table was not found. Check the file name matches `<source>.csv` (or the table name), and that the file is in the directory you pointed at. This is drift, not an error; exit code is still `0`.
-- **`"present": false` on a field** — no column matched that field name (after the case-insensitive fallback). The column may have been renamed or dropped in the export. Also drift, not an error.
+- **`"present": false` on an entity** — the backing database (or SQLite) table was not found. Check that the table name matches `<source>` (or the entity `name`) and that it lives in the namespace you targeted with `--db-schema`. This is drift, not an error; exit code is still `0`.
+- **`"present": false` on a field** — no column matched that field name (after the case-insensitive fallback). The column may have been renamed or dropped. Also drift, not an error.
 - **A field's `declared_type` is `unknown`** — the `type` you wrote matched no recognized alias. Most vendor spellings *are* recognized (`jsonb`, `timestamptz`, `serial`, `int4`, `varchar(255)`, …); the usual culprits are array *notation* (`int[]`), a bespoke domain type, or a typo. It will not fail (an `unknown` declared type is compatible with anything), but you lose the drift check. Replace it with a canonical name (`string`, `integer`, `datetime`, ...); see [Appendix B](#appendix-b-type-mapping-cheat-sheet).
 - **`"type_ok": false`** — the type inferred from the data is not compatible with the declared type. Example: you declared `age` as `integer` but a row contains `"unknown"`, so the whole column infers as `string`, and `integer` does not accept `string`. Either fix the data, or reconsider the declared type. This is the core drift signal.
 
@@ -901,10 +859,9 @@ These are **not** crashes — they are the profile telling you something.
 
 - This is not a full data validation engine. It profiles presence, nulls, distinct counts, inferred types, and type compatibility. It does **not** flag a `nullable: false` field just because nulls appear — it reports the counts and leaves the judgment to you.
 - It does not enforce foreign keys, uniqueness, ranges, regexes, or custom constraints.
-- Type inference scans every non-null value in one pass (O(1) memory per field), so drift anywhere in the file is caught — at the cost of running the type predicates over the full column rather than a sample.
+- Type inference scans every non-null value in one pass (O(1) memory per field), so drift anywhere in the column is caught — at the cost of running the type predicates over the full column rather than a sample.
 - `distinct_count` tracks all distinct non-null values for each profiled field, which is simple and exact but not approximate-memory analytics.
 - TXT schemas do not support metadata such as schema name, version, source, or descriptions.
-- The CLI exposes the default CSV null handling only. Use the Python API for custom CSV null tokens.
 - To read a **live database** you install the driver for that engine (`psycopg`/`psycopg2`, `PyMySQL`/`mysqlclient`, `pyodbc`, `oracledb`, …); SQLAlchemy itself ships with schemascope. schemascope only ever **reads** — it never writes to your database.
 
 ---
@@ -931,7 +888,7 @@ Build local artifacts:
 python3 -m build --sdist --wheel --outdir dist
 ```
 
-The source distribution includes the examples used in this README.
+The build produces a wheel and source distribution in `dist/`.
 
 ---
 
@@ -941,38 +898,36 @@ schemascope is released under the **MIT License** (see `pyproject.toml`).
 
 ---
 
-> **Next:** see [Appendix A — Generating a schemascope schema from your database](#appendix-a-generating-a-schemascope-schema-from-your-database) for copy-paste recipes per engine — the driver + SQLAlchemy URL to profile your database **live**, how to read its structure into a schema file, and (when you can't connect) how to export it to CSV/SQLite.
+> **Next:** see [Appendix A — Reading your schema and connecting, engine by engine](#appendix-a-reading-your-schema-and-connecting-engine-by-engine) for copy-paste recipes per engine — how to read a database's structure into a schema file, and the driver + SQLAlchemy URL to profile it **live**.
 
 ---
 
-## Appendix A: Generating a schemascope schema from your database
+## Appendix A: Reading your schema and connecting, engine by engine
 
-To profile a database you give schemascope two things — a **schema** (what the data should look like) and the **data** itself — and there are two ways to supply the data:
+To profile a database you give schemascope two things — a **schema** (what the data should look like) and the **database** itself. This appendix gives, for each engine, both halves.
 
 1. **Get the schema.** Read the real table structure — from the platform's DDL, its `information_schema` catalog, or an introspection command below — and translate each column type into one of schemascope's seven canonical types (`string`, `integer`, `float`, `boolean`, `date`, `datetime`, `unknown`). Write that as a small JSON/YAML/XML/TXT schema. (schemascope reads a schema; it does not invent one, so this step is yours.)
 
-2. **Point schemascope at the data — two options:**
-   - **Connect live (recommended):** install the driver for your engine and pass its **SQLAlchemy URL** as `DATA`; schemascope reads the tables directly. Each engine section gives the exact `pip install` and URL.
-   - **Or export:** if schemascope can't reach the database from where it runs, export each table to a `<table>.csv` (header row, all in one directory) or into a single SQLite file, and point it at that.
+2. **Connect.** Install the driver for your engine and pass its **SQLAlchemy URL** as `DATA`; schemascope reads the tables directly. Each engine section gives the exact `pip install` and URL.
 
-Either way both halves are required — a schema with no data, or data with no schema, leaves you stuck.
+Either half alone leaves you stuck — a schema with no database, or a database with no schema.
 
 ### Which situation are you in?
 
 | Your situation | What to do |
 | --- | --- |
-| Your data is in a **SQL database** (PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, Db2, CockroachDB, BigQuery, Snowflake, Redshift, Databricks) | Read its catalog/DDL into a schema (Step 1), then **connect schemascope live with its SQLAlchemy URL** — or export to CSV/SQLite if you can't connect (Step 2). Find your engine's numbered section below. |
-| Your data is in a **NoSQL / document store** (MongoDB, DynamoDB, Elasticsearch, Cassandra) | Same two steps, but first **sample documents/items** to discover fields and their real types — these stores are schemaless. See your engine's section. |
-| Your data is **already in a SQLite file** | You are done with the export half — schemascope opens `.db`/`.sqlite`/`.sqlite3` directly. Just read its `.schema` and write a schemascope schema. See [A5. SQLite](#a5-sqlite). |
-| Your data is **already in flat files** (CSV, Parquet, JSON) | Read the types from the file itself, and if it is not CSV yet, convert it. See [A17. Schema from flat files](#a17-schema-from-flat-files). |
+| Your data is in a **SQL database** (PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, Db2, CockroachDB, BigQuery, Snowflake, Redshift, Databricks) | Read its catalog/DDL into a schema (Step 1), then **connect schemascope live with its SQLAlchemy URL** (Step 2). Find your engine's numbered section below. |
+| Your data is in a **NoSQL / document store** (MongoDB, DynamoDB, Elasticsearch, Cassandra) | These have no SQLAlchemy dialect, so first **sample documents/items** to discover fields and their real types, then **load a representative sample into SQLite (or a SQL database)** and profile that. See your store's section. |
+| Your data is **already in a SQLite file** | schemascope opens `.db`/`.sqlite`/`.sqlite3` directly. Just read its `.schema` and write a schemascope schema. See [A5. SQLite](#a5-sqlite). |
+| Your data is **in flat files** (Parquet, JSON) | Read the types from the file itself, then load it into SQLite or DuckDB and point schemascope at that. See [A17. Schema from flat files](#a17-schema-from-flat-files). |
 
-> **You can connect directly.** For a SQL database, passing its SQLAlchemy URL as `DATA` (with the engine's driver installed) is the primary path — schemascope reads the tables live. The export-to-CSV/SQLite recipes are the fallback for when schemascope can't reach the database (air-gapped, VPN-only, or a dump someone emailed you). The introspection commands are useful either way, to build the schema file.
+> **The primary path is the live URL.** For a SQL database, passing its SQLAlchemy URL as `DATA` (with the engine's driver installed) is how schemascope reads the tables. When schemascope genuinely can't reach the database — air-gapped, VPN-only, or a dump someone emailed you — the one supported fallback is to load the data into a **SQLite file** (for example with `pgloader`) and point schemascope at that; it is mentioned sparingly below.
 
 ### How schemascope uses what you give it
 
 - **`SCHEMA`** is a **file you write** — JSON, YAML, XML, or TXT — listing your entities, fields, and their canonical types. schemascope reads it; it does not generate it for you.
-- **`DATA`** is a **SQLAlchemy database URL** (schemascope connects and reads live), a **directory of CSV files**, or a **single SQLite file**.
-- A URL carries the host, port, database, and credentials for the live connection. The export commands below are an alternative that produce CSV/SQLite instead.
+- **`DATA`** is a **SQLAlchemy database URL** (schemascope connects and reads live) or a **single SQLite file**.
+- A URL carries the host, port, database, and credentials for the live connection. schemascope opens a read-only session, streams the rows, and never writes back.
 
 ### Before you start — placeholders
 
@@ -980,13 +935,11 @@ The commands below use placeholders. Replace them with your real values:
 
 | Placeholder | Replace with |
 | --- | --- |
-| `HOST` / `PORT` | Your database server's hostname and port — needed only by the export/introspection client, never by schemascope itself. |
+| `HOST` / `PORT` | Your database server's hostname and port. |
 | `DBNAME` / `mydb` | The database (or schema) you are reading. |
 | `USER` / `PASSWORD` | Credentials for that database. |
-| `users`, `orders`, `TABLE` | The table (or collection) you are profiling. Each becomes one entity and one `<table>.csv`. |
-| `data/` | A local directory **you create** to hold the exported CSVs (one file per table). |
-
-> **Rule for every export:** the CSV must have a **header row** (schemascope reads the first row as the column names). Several tools omit the header by default — where a recipe notes this, add the header line yourself.
+| `users`, `orders`, `TABLE` | The table (or collection) you are profiling. Each becomes one entity. |
+| `warehouse.sqlite` | A local SQLite file used only for the "can't connect live" fallback (and for NoSQL samples). |
 
 ### A universal starting point: `information_schema.columns`
 
@@ -1008,16 +961,16 @@ Write the **canonical schemascope type** in the middle column into your schema. 
 Database column type (any platform) | Write this schemascope type | Notes
 --- | --- | ---
 `char`, `varchar`, `nvarchar`, `text`, `clob`, `string`, `character varying` | `string` | Plain text.
-`uuid`, `guid`, `uniqueidentifier` | `string` | `uuid` is a recognized alias, but writing `string` is clearer. Exported as text it infers `string`.
-`enum`, `set` | `string` | `enum` is a recognized alias; values export as text.
-`json`, `jsonb`, `xml`, `hstore`, `variant`, `object`, `array`, `geometry`, `geography` | `string` | Recognized — all map to `string`. Exported as serialized text they also infer `string`, so `type_ok` holds. (Array *notation* like `int[]` is not covered → `unknown`.)
-`bytea`, `blob`, `binary`, `varbinary`, `bytes`, `image` | `string` | Binary. Exports as hex/base64 text → infers `string`. (Consider excluding huge binary columns from the export.)
+`uuid`, `guid`, `uniqueidentifier` | `string` | `uuid` is a recognized alias, but writing `string` is clearer. Read as text it infers `string`.
+`enum`, `set` | `string` | `enum` is a recognized alias; values come back as text.
+`json`, `jsonb`, `xml`, `hstore`, `variant`, `object`, `array`, `geometry`, `geography` | `string` | Recognized — all map to `string`. Read from the database as serialized text they also infer `string`, so `type_ok` holds. (Array *notation* like `int[]` is not covered → `unknown`.)
+`bytea`, `blob`, `binary`, `varbinary`, `bytes`, `image` | `string` | Binary. Read as hex/base64 text → infers `string`. (Consider excluding huge binary columns from the profile.)
 `smallint`, `int`, `integer`, `bigint`, `int2`, `int4`, `int8`, `serial`, `bigserial`, `tinyint`, `mediumint`, `long` | `integer` | All recognized, including `int2`/`int4`/`int8`, `serial`/`bigserial`, `tinyint`/`mediumint`. (Oracle `NUMBER(p,0)` resolves via `number` → `float`, not `integer` — the scale is stripped with the parameter, and float safely accepts integer data.)
-`decimal`, `numeric`, `float`, `double`, `double precision`, `real`, `money`, `number(p,s)` | `float` | `money`/`number` may export with currency symbols or thousands separators; if so it infers `string` — strip formatting on export or declare `string`.
+`decimal`, `numeric`, `float`, `double`, `double precision`, `real`, `money`, `number(p,s)` | `float` | `money`/`number` may come back with currency symbols or thousands separators; if so it infers `string` — declare `string`, or return a cleaned value from a view.
 `boolean`, `bool`, `bit` | `boolean` | A single-bit or `tinyint(1)` flag column of 0/1 infers `boolean`; declaring `integer` also passes (integer accepts boolean).
-`date` | `date` | Must export as `YYYY-MM-DD`.
-`timestamp`, `datetime`, `datetime2`, `smalldatetime`, `timestamptz`, `timestamp with time zone` | `datetime` | All recognized as `datetime` (a `(precision)` parameter and `with`/`without time zone` wording are handled). Export as `YYYY-MM-DD HH:MM:SS`. A trailing numeric zone offset (`+00`) makes the *data* infer `string`; strip the zone or store UTC without offset.
-`time`, `time with time zone`, `interval`, `year` | `string` | Recognized — all map to `string` (they export as text and infer `string`).
+`date` | `date` | Returned as `YYYY-MM-DD`.
+`timestamp`, `datetime`, `datetime2`, `smalldatetime`, `timestamptz`, `timestamp with time zone` | `datetime` | All recognized as `datetime` (a `(precision)` parameter and `with`/`without time zone` wording are handled). Returned as `YYYY-MM-DD HH:MM:SS`. A trailing numeric zone offset (`+00`) makes the *data* infer `string`; store UTC or read without the offset.
+`time`, `time with time zone`, `interval`, `year` | `string` | Recognized — all map to `string` (they read back as text and infer `string`).
 
 > **Rule of thumb:** if you are unsure, declare `string`. A declared `string` accepts any inferred type, so it never produces a false `type_ok: false`. Use the more specific types when you actually want drift detection on that column.
 
@@ -1040,22 +993,22 @@ Or dump DDL only (no data) for all tables:
 pg_dump --schema-only --no-owner mydb > schema.sql
 ```
 
-**Map the types.** `text/varchar/char` → `string`; `uuid` → `string`; `smallint/integer/bigint/serial/bigserial/int2/int4/int8` → `integer`; `numeric/decimal/real/double precision/money` → `float`; `boolean` → `boolean`; `date` → `date`; `timestamp`/`timestamptz` → `datetime` (export without a `+00` offset — see note above); `json`/`jsonb`/`bytea`/`ARRAY`/`interval` → `string`.
+**Map the types.** `text/varchar/char` → `string`; `uuid` → `string`; `smallint/integer/bigint/serial/bigserial/int2/int4/int8` → `integer`; `numeric/decimal/real/double precision/money` → `float`; `boolean` → `boolean`; `date` → `date`; `timestamp`/`timestamptz` → `datetime` (store UTC or read without a `+00` offset — see note above); `json`/`jsonb`/`bytea`/`ARRAY`/`interval` → `string`.
 
-**Export the data (CSV or SQLite).** Use `\copy` for CSV (it runs client-side, no server file permissions needed), one file per table:
+**Connect.** Install the driver and pass the URL:
 
 ```bash
-psql -d mydb -c "\copy (SELECT * FROM users)  TO 'data/users.csv'  WITH (FORMAT csv, HEADER)"
-psql -d mydb -c "\copy (SELECT * FROM orders) TO 'data/orders.csv' WITH (FORMAT csv, HEADER)"
+pip install "schemascope[postgres]"
+schemascope schema.json "postgresql+psycopg://USER:PASSWORD@HOST:5432/mydb"
 ```
 
-Then run `schemascope schema.json data/`.
+Add `--db-schema public` (or another namespace) to target it explicitly.
 
-Alternatively, export into **SQLite** in one command with `pgloader`:
+*Can't connect live?* Load the data into a SQLite file once, then profile that:
 
 ```bash
-pgloader postgresql://user@localhost/mydb sqlite://./warehouse.sqlite
-# then: schemascope schema.json warehouse.sqlite
+pgloader postgresql://USER@HOST/mydb sqlite://./warehouse.sqlite
+schemascope schema.json warehouse.sqlite
 ```
 
 ---
@@ -1077,30 +1030,14 @@ Schema-only dump of all tables:
 mysqldump --no-data mydb > schema.sql
 ```
 
-**Map the types.** `char/varchar/text` → `string`; `tinyint/smallint/mediumint/int/bigint` → `integer`; `tinyint(1)` is MySQL's boolean and infers `boolean` (declare `boolean` or `integer`); `decimal/float/double` → `float`; `date` → `date`; `datetime/timestamp` → `datetime`; `time`/`year` → `string`; `json`/`blob`/`enum` → `string` (`enum` is a recognized alias, but the data exports as text either way).
+**Map the types.** `char/varchar/text` → `string`; `tinyint/smallint/mediumint/int/bigint` → `integer`; `tinyint(1)` is MySQL's boolean and infers `boolean` (declare `boolean` or `integer`); `decimal/float/double` → `float`; `date` → `date`; `datetime/timestamp` → `datetime`; `time`/`year` → `string`; `json`/`blob`/`enum` → `string` (`enum` is a recognized alias, and the data reads back as text either way).
 
-**Export the data (CSV or SQLite).** The most portable way is the batch client, which emits **tab-separated** output; convert tabs to commas:
+**Connect.**
 
 ```bash
-mysql --batch --raw -e "SELECT * FROM users" mydb \
-  | sed 's/\t/,/g' > data/users.csv
+pip install "schemascope[mysql]"     # MariaDB: same driver, or use the [mariadb] extra
+schemascope schema.json "mysql+pymysql://USER:PASSWORD@HOST:3306/mydb"
 ```
-
-`--batch` gives one header row plus tab-separated rows; the `sed` turns tabs into commas. (This is fine when your text fields contain no commas or tabs; for messy text with embedded delimiters, prefer a GUI export such as MySQL Workbench's "Export a Result Set" wizard, which writes a proper quoted CSV.)
-
-The server-side `SELECT ... INTO OUTFILE` writes a file **on the database server** and is restricted by the `secure_file_priv` setting:
-
-```sql
--- Check where the server is allowed to write:
-SHOW VARIABLES LIKE 'secure_file_priv';
-
-SELECT * FROM users
-INTO OUTFILE '/var/lib/mysql-files/users.csv'
-FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
-LINES TERMINATED BY '\n';
-```
-
-`INTO OUTFILE` does **not** write a header row, and the file lands on the server — so `--batch` above is usually easier for schemascope. If you use `INTO OUTFILE`, add the header line yourself.
 
 ---
 
@@ -1117,20 +1054,14 @@ ORDER BY ordinal_position;
 
 **Map the types.** `char/varchar/nvarchar/text/ntext` → `string`; `uniqueidentifier` → `string`; `tinyint/smallint/int/bigint` → `integer`; `decimal/numeric/float/real/money/smallmoney` → `float`; `bit` → `boolean`; `date` → `date`; `datetime/datetime2/smalldatetime/datetimeoffset` → `datetime` (all four are recognized); `time` → `string`; `varbinary`/`image`/`xml` → `string`.
 
-**Export the data (CSV or SQLite).** Use `sqlcmd` (which can emit a header) — `bcp` is faster but does not easily produce headers:
+**Connect.** Install the driver (and the Microsoft ODBC Driver 18 for SQL Server on your OS), then pass the URL:
 
 ```bash
-sqlcmd -S server -d mydb -Q "SET NOCOUNT ON; SELECT * FROM dbo.users" \
-  -s "," -W -o data/users.csv
+pip install "schemascope[mssql]"
+schemascope schema.json "mssql+pyodbc://USER:PASSWORD@HOST/mydb?driver=ODBC+Driver+18+for+SQL+Server"
 ```
 
-`-s ","` sets the comma separator and `-W` trims trailing spaces. You will get a dashed separator line under the header that you should delete. For large tables, `bcp` is the workhorse (no header, so add one):
-
-```bash
-bcp "SELECT * FROM mydb.dbo.users" queryout data/users.csv -c -t, -S server -T
-```
-
-The SSMS **Import and Export Wizard** (right-click the database → Tasks → Export Data) is the GUI route and lets you write a flat file with column headers.
+Add `--db-schema dbo` to target the default namespace.
 
 ---
 
@@ -1151,36 +1082,20 @@ Full DDL for a table:
 SELECT DBMS_METADATA.GET_DDL('TABLE', 'USERS') FROM dual;
 ```
 
-**Map the types.** `VARCHAR2`/`CHAR`/`NVARCHAR2`/`CLOB` → `string`; `NUMBER(p,0)` → `integer`, `NUMBER(p,s)`/`FLOAT`/`BINARY_FLOAT`/`BINARY_DOUBLE` → `float`; `TIMESTAMP` → `datetime`; `RAW`/`BLOB` → `string`. Note that Oracle's `DATE` actually carries a time component, so it commonly exports as a full timestamp — declare it `datetime` (or `date` if you export just the date part). There is no native boolean in table columns; a 0/1 `NUMBER(1)` flag infers `boolean`.
+**Map the types.** `VARCHAR2`/`CHAR`/`NVARCHAR2`/`CLOB` → `string`; `NUMBER(p,0)` → `integer` in intent, though it normalizes via `number` → `float` (harmless — float accepts integer data); `NUMBER(p,s)`/`FLOAT`/`BINARY_FLOAT`/`BINARY_DOUBLE` → `float`; `TIMESTAMP` → `datetime`; `RAW`/`BLOB` → `string`. Note that Oracle's `DATE` actually carries a time component, so it commonly reads as a full timestamp — declare it `datetime` (or `date` if it holds just the date part). There is no native boolean in table columns; a 0/1 `NUMBER(1)` flag infers `boolean`.
 
-**Export the data (CSV or SQLite).** With SQLcl (the modern command-line client), which has a built-in CSV format:
+**Connect.**
 
-```sql
--- in sqlcl, connected to your DB:
-SET SQLFORMAT csv
-SPOOL data/users.csv
-SELECT * FROM users;
-SPOOL OFF
+```bash
+pip install "schemascope[oracle]"
+schemascope schema.json "oracle+oracledb://USER:PASSWORD@HOST:1521/?service_name=XEPDB1"
 ```
-
-Or with **SQL\*Plus 12.2+**, which added CSV markup:
-
-```sql
-SET MARKUP CSV ON
-SET HEADING ON
-SET FEEDBACK OFF
-SPOOL data/users.csv
-SELECT * FROM users;
-SPOOL OFF
-```
-
-Both write a header row by default. (Older SQL\*Plus without `MARKUP CSV` requires concatenating columns by hand — prefer SQLcl.)
 
 ---
 
 ### A5. SQLite
 
-SQLite is the easy case: **schemascope opens a `.db`/`.sqlite`/`.sqlite3` file directly, so you do not need to export data at all.**
+SQLite is the easy case: **schemascope opens a `.db`/`.sqlite`/`.sqlite3` file directly, so there is nothing to connect to.**
 
 **Read the structure.** In the `sqlite3` shell:
 
@@ -1196,18 +1111,7 @@ sqlite3 warehouse.sqlite ".schema users"
 schemascope schema.json warehouse.sqlite
 ```
 
-If you still want CSVs (for example, to hand to a different tool), the shell can produce them:
-
-```bash
-sqlite3 warehouse.sqlite <<'EOF'
-.headers on
-.mode csv
-.output data/users.csv
-SELECT * FROM users;
-.output data/orders.csv
-SELECT * FROM orders;
-EOF
-```
+You can equally reach the same file with a URL: `schemascope schema.json "sqlite:////abs/path/warehouse.sqlite"`.
 
 ---
 
@@ -1230,13 +1134,12 @@ db2look -d MYDB -e -t USERS > schema.sql
 
 **Map the types.** `CHAR/VARCHAR/CLOB/GRAPHIC` → `string`; `SMALLINT/INTEGER/BIGINT` → `integer`; `DECIMAL/DECFLOAT/REAL/DOUBLE` → `float`; `BOOLEAN` → `boolean`; `DATE` → `date`; `TIMESTAMP` → `datetime`; `TIME` → `string`; `BLOB`/`XML` → `string`.
 
-**Export the data (CSV or SQLite).** Use the `EXPORT` command (delimited format):
+**Connect.**
 
-```sql
-db2 "EXPORT TO data/users.csv OF DEL MODIFIED BY NOCHARDEL SELECT * FROM users"
+```bash
+pip install "schemascope[db2]"
+schemascope schema.json "db2+ibm_db://USER:PASSWORD@HOST:50000/MYDB"
 ```
-
-`OF DEL` produces comma-delimited output. **Db2 `EXPORT` does not write a header row**, so add one yourself (for example, `sed -i '1i id,email,age,active,deleted,signup_date' data/users.csv` with your real column names), or list columns explicitly in the `SELECT` so you know the order.
 
 ---
 
@@ -1244,24 +1147,16 @@ db2 "EXPORT TO data/users.csv OF DEL MODIFIED BY NOCHARDEL SELECT * FROM users"
 
 CockroachDB speaks the PostgreSQL wire protocol, so its introspection is Postgres-compatible.
 
-**Read the structure.** `SHOW CREATE TABLE users;` prints the DDL, or use `information_schema.columns` as in the [universal query](#a-universal-starting-point-information_schemacolumns). Type mapping is the same as [A1. PostgreSQL](#a1-postgresql).
+**Read the structure.** `SHOW CREATE TABLE users;` prints the DDL, or use `information_schema.columns` as in the [universal query](#a-universal-starting-point-information_schemacolumns).
 
 **Map the types.** Same as [A1. PostgreSQL](#a1-postgresql).
 
-**Export the data (CSV or SQLite).** The simplest client-side route is `COPY ... TO STDOUT` via the `cockroach sql` shell, redirected to a file:
+**Connect.**
 
 ```bash
-cockroach sql --url "$CONN" \
-  -e "COPY (SELECT * FROM users) TO STDOUT WITH CSV HEADER" > data/users.csv
+pip install "schemascope[cockroach]"
+schemascope schema.json "cockroachdb://USER:PASSWORD@HOST:26257/mydb?sslmode=verify-full"
 ```
-
-For large tables, `EXPORT` writes CSV files to cloud/nodelocal storage in parallel:
-
-```sql
-EXPORT INTO CSV 'nodelocal://1/users' WITH nullas = '' FROM TABLE users;
-```
-
-(Then collect the files from the storage location. For schemascope, the `COPY ... TO STDOUT` form is usually simplest because it gives you one local CSV with a header.)
 
 ---
 
@@ -1281,33 +1176,16 @@ FROM `myproject.mydataset.INFORMATION_SCHEMA.COLUMNS`
 WHERE table_name = 'users';
 ```
 
-**Map the types.** `STRING` → `string`; `INT64`/`INTEGER` → `integer`; `NUMERIC`/`BIGNUMERIC`/`FLOAT64` → `float`; `BOOL` → `boolean`; `DATE` → `date`; `DATETIME`/`TIMESTAMP` → `datetime` (export in `YYYY-MM-DD HH:MM:SS` form); `TIME` → `string`; `BYTES`/`JSON`/`GEOGRAPHY`/`ARRAY`/`STRUCT` → `string`.
+**Map the types.** `STRING` → `string`; `INT64`/`INTEGER` → `integer`; `NUMERIC`/`BIGNUMERIC`/`FLOAT64` → `float`; `BOOL` → `boolean`; `DATE` → `date`; `DATETIME`/`TIMESTAMP` → `datetime` (`YYYY-MM-DD HH:MM:SS` form); `TIME` → `string`; `BYTES`/`JSON`/`GEOGRAPHY`/`ARRAY`/`STRUCT` → `string`.
 
-**Export the data (CSV or SQLite).** `EXPORT DATA` writes CSV directly to Cloud Storage with a header:
-
-```sql
-EXPORT DATA OPTIONS(
-  uri = 'gs://my-bucket/users-*.csv',
-  format = 'CSV',
-  overwrite = true,
-  header = true
-) AS SELECT * FROM mydataset.users;
-```
-
-Or the `bq extract` CLI (header on by default via `--print_header`):
+**Connect.**
 
 ```bash
-bq extract --destination_format=CSV --print_header=true \
-  mydataset.users gs://my-bucket/users.csv
-gsutil cp gs://my-bucket/users.csv data/users.csv
+pip install "schemascope[bigquery]"
+schemascope schema.json "bigquery://myproject/mydataset"
 ```
 
-For small results you can skip GCS entirely:
-
-```bash
-bq query --use_legacy_sql=false --format=csv \
-  'SELECT * FROM mydataset.users' > data/users.csv
-```
+(Authenticate with `GOOGLE_APPLICATION_CREDENTIALS` pointing at a service-account key, or an active `gcloud` login.)
 
 ---
 
@@ -1321,31 +1199,16 @@ FROM information_schema.columns
 WHERE table_name = 'USERS';
 ```
 
-**Map the types.** `VARCHAR/STRING/TEXT/CHAR` → `string`; `NUMBER(p,0)`/`INT`/`INTEGER`/`BIGINT` → `integer`, `NUMBER(p,s)`/`FLOAT`/`DOUBLE`/`REAL` → `float`; `BOOLEAN` → `boolean`; `DATE` → `date`; `DATETIME`/`TIMESTAMP_NTZ`/`TIMESTAMP_LTZ`/`TIMESTAMP_TZ` → `datetime` (strip the zone offset if present); `TIME` → `string`; `VARIANT`/`OBJECT`/`ARRAY`/`BINARY`/`GEOGRAPHY` → `string`.
+**Map the types.** `VARCHAR/STRING/TEXT/CHAR` → `string`; `NUMBER(p,0)`/`INT`/`INTEGER`/`BIGINT` → `integer` in intent (normalizes via `number` → `float`, harmless); `NUMBER(p,s)`/`FLOAT`/`DOUBLE`/`REAL` → `float`; `BOOLEAN` → `boolean`; `DATE` → `date`; `DATETIME`/`TIMESTAMP_NTZ`/`TIMESTAMP_LTZ`/`TIMESTAMP_TZ` → `datetime` (strip the zone offset if present); `TIME` → `string`; `VARIANT`/`OBJECT`/`ARRAY`/`BINARY`/`GEOGRAPHY` → `string`.
 
-**Export the data (CSV or SQLite).** The simplest CLI route uses `snowsql` output options:
-
-```bash
-snowsql -o output_format=csv -o header=true -o friendly=false -o timing=false \
-  -q "SELECT * FROM users" -o output_file=data/users.csv
-```
-
-The scalable route unloads to a stage with `COPY INTO`, then downloads with `GET`:
-
-```sql
-COPY INTO @~/users
-FROM users
-FILE_FORMAT = (TYPE = CSV FIELD_OPTIONALLY_ENCLOSED_BY = '"' COMPRESSION = NONE)
-HEADER = TRUE
-OVERWRITE = TRUE
-SINGLE = TRUE;
-```
+**Connect.**
 
 ```bash
-snowsql -q "GET @~/users file://./data/"
+pip install "schemascope[snowflake]"
+schemascope schema.json "snowflake://USER:PASSWORD@ACCOUNT/mydb/myschema?warehouse=MY_WH&role=MY_ROLE"
 ```
 
-(`HEADER = TRUE` writes the column names as the first row.)
+The `myschema` in the URL sets the default namespace; `--db-schema` can override it.
 
 ---
 
@@ -1361,22 +1224,11 @@ WHERE table_name = 'users';
 
 **Map the types.** `CHAR/VARCHAR/TEXT` → `string`; `SMALLINT/INT2/INTEGER/INT4/BIGINT/INT8` → `integer`; `DECIMAL/NUMERIC/REAL/FLOAT4/DOUBLE PRECISION/FLOAT8` → `float`; `BOOLEAN` → `boolean`; `DATE` → `date`; `TIMESTAMP`/`TIMESTAMPTZ` → `datetime` (strip the zone); `TIME`/`TIMETZ`/`SUPER`/`VARBYTE` → `string`.
 
-**Export the data (CSV or SQLite).** Use `UNLOAD` (writes to S3, with a header):
-
-```sql
-UNLOAD ('SELECT * FROM users')
-TO 's3://my-bucket/users/'
-IAM_ROLE 'arn:aws:iam::123456789012:role/MyRedshiftRole'
-FORMAT AS CSV
-HEADER
-PARALLEL OFF
-ALLOWOVERWRITE;
-```
-
-`PARALLEL OFF` makes a single file; `HEADER` adds the column names. Then copy the object down from S3 and rename it to `data/users.csv`:
+**Connect.**
 
 ```bash
-aws s3 cp s3://my-bucket/users/000 data/users.csv
+pip install "schemascope[redshift]"
+schemascope schema.json "redshift+redshift_connector://USER:PASSWORD@HOST:5439/mydb"
 ```
 
 ---
@@ -1387,23 +1239,18 @@ aws s3 cp s3://my-bucket/users/000 data/users.csv
 
 **Map the types.** `STRING` → `string`; `TINYINT/SMALLINT/INT/BIGINT` → `integer`; `FLOAT/DOUBLE/DECIMAL` → `float`; `BOOLEAN` → `boolean`; `DATE` → `date`; `TIMESTAMP`/`TIMESTAMP_NTZ` → `datetime`; `BINARY`/`ARRAY`/`MAP`/`STRUCT` → `string`.
 
-**Export the data (CSV or SQLite).** Use the DataFrame writer (write a single file with a header):
+**Connect.**
 
-```python
-(spark.table("users")
-      .coalesce(1)                       # one output file
-      .write.option("header", "true")
-      .mode("overwrite")
-      .csv("/tmp/users_csv"))
+```bash
+pip install "schemascope[databricks]"
+schemascope schema.json "databricks://token:DAPI_TOKEN@HOST?http_path=/sql/1.0/warehouses/XXXX&catalog=main&schema=default"
 ```
-
-Spark writes a *directory* of part files; grab the single `part-*.csv` inside and rename it to `data/users.csv`. (On Databricks you can then `dbutils.fs.cp` it to where you need it, or download via the workspace.)
 
 ---
 
 ### A12. MongoDB
 
-MongoDB is **schemaless** — documents in a collection need not share the same fields or types. So *you* decide which fields to profile, then sample the data to learn their real types.
+MongoDB is **schemaless** — documents in a collection need not share the same fields or types — and it has no SQLAlchemy dialect. So *you* decide which fields to profile, sample the data to learn their real types, then load a sample into SQLite (or a SQL database) and profile that.
 
 **Read the structure (discover fields and types).** In `mongosh`, sample documents:
 
@@ -1413,21 +1260,42 @@ db.orders.aggregate([{ $sample: { size: 100 } }])
 
 MongoDB Compass has a built-in **Schema** tab that analyzes a collection and reports each field's observed types and how often they appear. The community `variety.js` script does the same from the shell. Use whichever to pick your fields and their dominant types.
 
-**Map the types.** BSON `String` → `string`; `Int32`/`Int64`/`Long` → `integer`; `Double`/`Decimal128` → `float`; `Boolean` → `boolean`; `Date` → `datetime` (Mongo dates carry a time; `mongoexport` writes ISO-8601 like `2021-03-05T10:00:00.000Z` — the trailing `Z` is fine for schemascope's datetime inference); `ObjectId`/`UUID` → `string`; embedded documents/arrays → `string`.
+**Map the types.** BSON `String` → `string`; `Int32`/`Int64`/`Long` → `integer`; `Double`/`Decimal128` → `float`; `Boolean` → `boolean`; `Date` → `datetime` (Mongo dates carry a time and serialize as ISO-8601 like `2021-03-05T10:00:00.000Z` — the trailing `Z` is fine for schemascope's datetime inference); `ObjectId`/`UUID` → `string`; embedded documents/arrays → `string`.
 
-**Export the data (CSV or SQLite).** Use `mongoexport`, which **requires** you to list the fields for CSV:
+**Load a sample into SQLite and profile it.** Pull the fields you care about into a SQLite table:
 
 ```bash
-mongoexport --uri "mongodb://localhost:27017" --db mydb --collection orders \
-  --type=csv --fields "orderId,customerId,status,total,createdAt" \
-  --out data/orders.csv
+pip install pymongo
 ```
 
-By default the listed field names become the header row (use `--noHeaderLine` to omit it — but schemascope needs the header, so keep it). Nested fields use dot notation, e.g. `--fields "orderId,customer.name"`.
+```python
+import sqlite3
+from pymongo import MongoClient
+
+fields = ("orderId", "customerId", "status", "total", "createdAt")
+docs = MongoClient("mongodb://localhost:27017").mydb.orders.aggregate(
+    [{"$sample": {"size": 1000}}]
+)
+
+con = sqlite3.connect("warehouse.sqlite")
+con.execute(
+    "CREATE TABLE orders (orderId TEXT, customerId TEXT, status TEXT, total REAL, createdAt TEXT)"
+)
+con.executemany(
+    "INSERT INTO orders VALUES (:orderId, :customerId, :status, :total, :createdAt)",
+    [{k: d.get(k) for k in fields} for d in docs],
+)
+con.commit()
+con.close()
+```
+
+Then run `schemascope schema.json warehouse.sqlite`.
 
 ---
 
 ### A13. Cassandra / ScyllaDB
+
+Cassandra/ScyllaDB have no SQLAlchemy dialect, so profile a **sample loaded into SQLite** (or a SQL database).
 
 **Read the structure.** In `cqlsh`, `DESCRIBE TABLE users;` prints the DDL, or query the catalog:
 
@@ -1438,19 +1306,30 @@ WHERE keyspace_name = 'myks' AND table_name = 'users';
 
 **Map the types.** `text/varchar/ascii` → `string`; `tinyint/smallint/int/bigint/varint/counter` → `integer`; `decimal/float/double` → `float`; `boolean` → `boolean`; `date` → `date`; `timestamp` → `datetime`; `time` → `string`; `uuid`/`timeuuid`/`inet` → `string`; `blob`/`list`/`set`/`map` → `string`.
 
-**Export the data (CSV or SQLite).** Use `cqlsh COPY ... TO`, which supports a header:
+**Load a sample into SQLite and profile it.** Read a bounded sample with the `cassandra-driver` and insert the columns you care about into a SQLite table, then `schemascope schema.json warehouse.sqlite`:
 
-```sql
-COPY myks.users TO 'data/users.csv' WITH HEADER = TRUE;
+```python
+import sqlite3
+from cassandra.cluster import Cluster
+
+session = Cluster(["127.0.0.1"]).connect("myks")
+rows = session.execute("SELECT id, email, age FROM users LIMIT 5000")
+
+con = sqlite3.connect("warehouse.sqlite")
+con.execute("CREATE TABLE users (id TEXT, email TEXT, age INTEGER)")
+con.executemany(
+    "INSERT INTO users VALUES (?, ?, ?)",
+    [(str(r.id), r.email, r.age) for r in rows],
+)
+con.commit()
+con.close()
 ```
-
-You can restrict/order columns: `COPY myks.users (id, email, age) TO 'data/users.csv' WITH HEADER = TRUE;`. (`COPY` is fine for moderate tables; for very large ones use a bulk unloader such as DSBulk.)
 
 ---
 
 ### A14. Amazon DynamoDB
 
-DynamoDB is **schemaless** apart from its key schema. `describe-table` tells you only the partition/sort keys and their types — not the other attributes — so you must sample items to learn the rest.
+DynamoDB is **schemaless** apart from its key schema, and has no SQLAlchemy dialect. `describe-table` tells you only the partition/sort keys — not the other attributes — so sample items to learn the rest, then load a sample into SQLite (or a SQL database) and profile that.
 
 **Read the structure (key schema and sample attributes):**
 
@@ -1464,32 +1343,37 @@ aws dynamodb scan --table-name Orders --max-items 25
 
 **Map the types.** DynamoDB attribute types: `S` (string) → `string`; `N` (number) → `integer` or `float` depending on the values; `BOOL` → `boolean`; `B` (binary) → `string`; `M`/`L` (map/list) → `string`; `SS`/`NS`/`BS` (sets) → `string`. Because attributes are per-item, pick the fields you care about and declare them from what the sample shows.
 
-**Export the data (CSV or SQLite).** The native **export to S3** (point-in-time) writes DynamoDB JSON / Ion / Parquet — **not CSV** — so it is not directly usable by schemascope without a conversion step:
+**Load a sample into SQLite and profile it.** `scan` the table to JSON, flatten the attributes, and insert into SQLite (DynamoDB's native export to S3 writes DynamoDB JSON / Ion / Parquet, which schemascope can't read directly, so this scan-and-load route is the pragmatic one for modest tables):
 
 ```bash
-aws dynamodb export-table-to-point-in-time \
-  --table-arn arn:aws:dynamodb:us-east-1:123456789012:table/Orders \
-  --s3-bucket my-bucket --s3-prefix orders/ --export-format DYNAMODB_JSON
+aws dynamodb scan --table-name Orders --output json > orders.json
 ```
 
-For a small/medium table, the pragmatic route to CSV is to `scan` and flatten with `jq`:
+```python
+import json, sqlite3
 
-```bash
-# header row:
-echo "orderId,customerId,status,total" > data/orders.csv
-# rows (adjust the attribute names to your table):
-aws dynamodb scan --table-name Orders --output json \
-  | jq -r '.Items[] | [.orderId.S, .customerId.S, .status.S, .total.N] | @csv' \
-  >> data/orders.csv
+items = json.load(open("orders.json"))["Items"]
+
+con = sqlite3.connect("warehouse.sqlite")
+con.execute("CREATE TABLE orders (orderId TEXT, customerId TEXT, status TEXT, total REAL)")
+con.executemany(
+    "INSERT INTO orders VALUES (?, ?, ?, ?)",
+    [
+        (i["orderId"]["S"], i["customerId"]["S"], i["status"]["S"], float(i["total"]["N"]))
+        for i in items
+    ],
+)
+con.commit()
+con.close()
 ```
 
-(For large tables use AWS Glue or a proper export-then-transform pipeline; the `scan` + `jq` approach is best for modest volumes.)
+Then run `schemascope schema.json warehouse.sqlite`. (For large tables, use AWS Glue or an export-then-transform pipeline into a SQL database; the `scan` route is best for modest volumes.)
 
 ---
 
 ### A15. Elasticsearch
 
-Elasticsearch is document-oriented; each index has a **mapping** that plays the role of a schema.
+Elasticsearch is document-oriented and has no SQLAlchemy dialect; each index has a **mapping** that plays the role of a schema. Read the mapping, then load a sample into SQLite (or a SQL database) and profile that.
 
 **Read the structure (the mapping):**
 
@@ -1499,20 +1383,36 @@ curl -s "http://localhost:9200/orders/_mapping?pretty"
 
 **Map the types.** `text`/`keyword` → `string`; `integer`/`long`/`short`/`byte` → `integer`; `float`/`double`/`half_float`/`scaled_float` → `float`; `boolean` → `boolean`; `date` → `datetime` (Elasticsearch dates are usually full timestamps); `ip`/`geo_point`/`object`/`nested` → `string`.
 
-**Export the data (CSV or SQLite).** Use the community `elasticdump` tool (or a Logstash `csv` output):
+**Load a sample into SQLite and profile it.** Pull a page of hits and insert the fields you care about:
 
-```bash
-elasticdump --input=http://localhost:9200/orders \
-  --output=data/orders.csv --type=data --csvConfigs='{"headers":true}'
+```python
+import sqlite3
+from elasticsearch import Elasticsearch
+
+es = Elasticsearch("http://localhost:9200")
+hits = es.search(index="orders", size=1000)["hits"]["hits"]
+
+con = sqlite3.connect("warehouse.sqlite")
+con.execute("CREATE TABLE orders (orderId TEXT, status TEXT, total REAL, createdAt TEXT)")
+con.executemany(
+    "INSERT INTO orders VALUES (?, ?, ?, ?)",
+    [
+        (h["_source"].get("orderId"), h["_source"].get("status"),
+         h["_source"].get("total"), h["_source"].get("createdAt"))
+        for h in hits
+    ],
+)
+con.commit()
+con.close()
 ```
 
-(Keep this one simple: `elasticdump` and Logstash both flatten documents to CSV; you choose which fields become columns.)
+Then run `schemascope schema.json warehouse.sqlite`.
 
 ---
 
 ### A16. Schema from code and tooling
 
-Sometimes the truest schema lives in your application, not the database. You can read the field types there and translate them the same way. You still export the *data* to CSV/SQLite as above — these only give you the schema half.
+Sometimes the truest schema lives in your application, not the database. You can read the field types there and translate them the same way. You still point schemascope at the live database (or a SQLite file) as above — these only give you the schema half.
 
 - **Django** — `python manage.py inspectdb > models.py` reverse-engineers models from an existing database; or read your existing model fields. `CharField/TextField/UUIDField/SlugField/EmailField` → `string`; `IntegerField/BigIntegerField/SmallIntegerField/AutoField` → `integer`; `FloatField/DecimalField` → `float`; `BooleanField` → `boolean`; `DateField` → `date`; `DateTimeField` → `datetime`; `JSONField`/`BinaryField` → `string`.
 - **SQLAlchemy** — reflect an existing table (`Table('users', metadata, autoload_with=engine)`) or read your models. `String/Text/Unicode` → `string`; `Integer/BigInteger/SmallInteger` → `integer`; `Float/Numeric` → `float`; `Boolean` → `boolean`; `Date` → `date`; `DateTime` → `datetime`; `JSON`/`LargeBinary` → `string`.
@@ -1524,11 +1424,18 @@ Sometimes the truest schema lives in your application, not the database. You can
 
 ### A17. Schema from flat files
 
-If your data is already in files, you can read both the types and get CSV in one place.
+If your data is already in flat files, read the types from the file itself, then load it into a database schemascope can open — a **SQLite file** or a **DuckDB** database — and profile that.
 
-- **CSV** — `csvkit`'s `csvstat data/users.csv` reports each column's inferred type, null count, and distinct count (a nice cross-check against schemascope). Its guesses map cleanly: Number → `integer`/`float`, Boolean → `boolean`, Date → `date`, DateTime → `datetime`, Text → `string`. Or in pandas, `pandas.read_csv('users.csv').dtypes`: `int64` → `integer`, `float64` → `float`, `bool` → `boolean`, `datetime64` → `datetime`, `object` → `string`.
-- **Parquet / Arrow** — `pyarrow.parquet.read_schema('users.parquet')` prints the column types. `string/large_string` → `string`; `int8/16/32/64` → `integer`; `float/double/decimal` → `float`; `bool` → `boolean`; `date32/date64` → `date`; `timestamp` → `datetime`; `binary`/`list`/`struct` → `string`. Then convert to CSV: `pyarrow.csv.write_csv(pyarrow.parquet.read_table('users.parquet'), 'data/users.csv')` (it writes a header row).
-- **JSON** — inspect the object keys to choose fields, and map each value's JSON type: string → `string`; whole-number → `integer`; fractional number → `float`; `true`/`false` → `boolean`; date-looking strings → `date`/`datetime` if they match the strict formats, else `string`. Flatten to CSV with `jq -r` (see the DynamoDB example) or pandas `json_normalize`.
+- **Parquet / Arrow** — `pyarrow.parquet.read_schema('users.parquet')` prints the column types. `string/large_string` → `string`; `int8/16/32/64` → `integer`; `float/double/decimal` → `float`; `bool` → `boolean`; `date32/date64` → `date`; `timestamp` → `datetime`; `binary`/`list`/`struct` → `string`. DuckDB reads Parquet natively, so materialize a table and profile it live:
+
+  ```bash
+  pip install "schemascope[duckdb]" duckdb
+  duckdb warehouse.duckdb "CREATE TABLE users AS SELECT * FROM 'users.parquet'"
+  schemascope schema.json "duckdb:///warehouse.duckdb"
+  ```
+
+  (Or load into SQLite with pandas: `pandas.read_parquet('users.parquet').to_sql('users', sqlite3.connect('warehouse.sqlite'), index=False)`, then `schemascope schema.json warehouse.sqlite`.)
+- **JSON** — inspect the object keys to choose fields, and map each value's JSON type: string → `string`; whole-number → `integer`; fractional number → `float`; `true`/`false` → `boolean`; date-looking strings → `date`/`datetime` if they match the strict formats, else `string`. Load into DuckDB (`CREATE TABLE users AS SELECT * FROM read_json_auto('users.json')`) or into SQLite via pandas `json_normalize(...).to_sql(...)`, then profile that.
 
 ---
 
@@ -1573,7 +1480,7 @@ which returns:
 
 ```json
 {
-  "name": "customer_exports",
+  "name": "customer_tables",
   "version": "2026-07",
   "entities": [
     {
@@ -1591,45 +1498,29 @@ which returns:
 }
 ```
 
-(This is exactly the shape of the bundled `examples/schema.json`.)
-
-**Step 3 — export the data.** One CSV, header row, into a `data/` directory:
+**Step 3 — connect and profile.** Install the driver and point schemascope at the live database:
 
 ```bash
-mkdir -p data
-psql -d mydb -c "\copy (SELECT * FROM users) TO 'data/users.csv' WITH (FORMAT csv, HEADER)"
+pip install "schemascope[postgres]"
+schemascope schema.json "postgresql+psycopg://USER:PASSWORD@HOST:5432/mydb"
 ```
 
-Your `data/users.csv` now looks like:
+> **Note:** read live, Postgres booleans come back as Python `True`/`False`, which schemascope recognizes as boolean values — so `active` infers `boolean`.
 
-```text
-id,email,age,active,deleted,signup_date
-1,alice@example.com,31,t,0,2021-03-05
-...
-```
+**Alternative Step 3 — bridge through SQLite.** If schemascope can't reach the database from where it runs, load the same rows into a SQLite file once (for example with `pgloader postgresql://USER@HOST/mydb sqlite://./warehouse.sqlite`) and point schemascope at `warehouse.sqlite` instead.
 
-> **Note:** Postgres exports booleans as `t`/`f`, which schemascope recognizes as boolean tokens — so `active` still infers `boolean`.
-
-**Alternative Step 3 — export into SQLite instead.** If you would rather bridge through SQLite, load the same rows into a file (for example with `pgloader postgresql://user@localhost/mydb sqlite://./warehouse.sqlite`, or by piping the CSV into `sqlite3`), and point schemascope at `warehouse.sqlite`.
-
-**Step 4 — run schemascope:**
-
-```bash
-schemascope schema.json data
-```
-
-**Step 5 — read the result.** You get the same report structure as the [walkthrough](#your-first-run-in-5-minutes): `users` is `present: true`, each field is `present: true`, `age` shows whatever `null_fraction` your real data has, `deleted` infers `boolean` but `type_ok` stays `true` (integer accepts boolean), and every other field's `type_ok` is `true` if the data matches. Any `present: false` or `type_ok: false` in that output is drift worth investigating.
+**Step 4 — read the result.** You get the same report structure as the [getting-started walkthrough](#getting-started--profile-your-database): `users` is `present: true`, each field is `present: true`, `age` shows whatever `null_fraction` your real data has, `deleted` infers `boolean` but `type_ok` stays `true` (integer accepts boolean), and every other field's `type_ok` is `true` if the data matches. Any `present: false` or `type_ok: false` in that output is drift worth investigating.
 
 ### How do I check my schema file worked?
 
-schemascope has no separate "inspect" or "validate" command — running the tool *is* the check. Point it at your schema and your exported data:
+schemascope has no separate "inspect" or "validate" command — running the tool *is* the check. Point it at your schema and your database:
 
 ```bash
-schemascope schema.json data/
+schemascope schema.json "postgresql+psycopg://USER@HOST/mydb"
 ```
 
 - If you get a `schema error: ...` on stderr, the schema file itself is wrong — fix it (see [Troubleshooting](#troubleshooting)).
-- If it runs and every entity and field you declared appears in the report, schemascope understood your schema. `present: true` on an entity means its CSV/table was found; `present: true` on a field means a matching column was found.
+- If it runs and every entity and field you declared appears in the report, schemascope understood your schema. `present: true` on an entity means its table was found; `present: true` on a field means a matching column was found.
 - A `present: false` entity or field, or a `type_ok: false`, means your schema is fine but the **data** does not match it — that is drift, not a schema problem, and the exit code is still `0`.
 
 ---
@@ -1645,13 +1536,11 @@ Canonical schemascope type | Database types that map to it
 `float` | `float`, `double`, `double precision`, `real`, `decimal`, `numeric`, `number` (any `NUMBER(p,s)` **or** `NUMBER(p,0)` — the scale is stripped, so Oracle integers land here too; harmless, since float accepts integer data), `money`, `smallmoney`, `float4`/`float8`, `float64`, `decimal128`, `BIGNUMERIC`
 `boolean` | `boolean`, `bool`, `bit`. *(A MySQL `tinyint(1)` normalizes to `integer` — the `(1)` is stripped to `tinyint` — but a 0/1 column infers `boolean` from its data and `integer` accepts that, so it still passes.)*
 `date` | `date`
-`datetime` | `datetime`, `datetime2`, `smalldatetime`, `timestamp`, `timestamptz`, `timestamp with/without time zone`, `TIMESTAMP_NTZ/LTZ/TZ`, `datetimeoffset` (strip any zone offset so it exports as `YYYY-MM-DD HH:MM:SS`)
+`datetime` | `datetime`, `datetime2`, `smalldatetime`, `timestamp`, `timestamptz`, `timestamp with/without time zone`, `TIMESTAMP_NTZ/LTZ/TZ`, `datetimeoffset` (strip any zone offset so it reads back as `YYYY-MM-DD HH:MM:SS`)
 `unknown` | Only a spelling that appears nowhere above (e.g. array *notation* `int[]`, a bespoke domain type, or a genuine typo), a non-string, or an empty/missing type. A declared `unknown` is compatible with any inferred type, so its `type_ok` is always `true` — you simply get no drift check on that field.
 
 Reminders that catch people out:
 
-- Vendor spellings **are** recognized now — `json`, `jsonb`, `blob`, `bytea`, `array`, `money`, `interval`, `time`, `year`, `serial`, `int4`, `nvarchar`, `datetime2`, `timestamptz`, `varchar(255)`, `double precision`, and the rest of the table above all resolve. You generally don't need to hand-translate types.
-- A native UUID column is fine once exported: it comes out as text, infers `string`, and a declared `string` (or `uuid`) accepts it.
+- Vendor spellings **are** recognized — `json`, `jsonb`, `blob`, `bytea`, `array`, `money`, `interval`, `time`, `year`, `serial`, `int4`, `nvarchar`, `datetime2`, `timestamptz`, `varchar(255)`, `double precision`, and the rest of the table above all resolve. You generally don't need to hand-translate types.
+- A native UUID column is fine: when read it comes back as text, infers `string`, and a declared `string` (or `uuid`) accepts it.
 - When unsure, declare `string` — it accepts any inferred type, so it never produces a false mismatch; use specific types where you want real drift detection.
-</content>
-</invoke>
