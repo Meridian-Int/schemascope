@@ -1,0 +1,85 @@
+PROPRIETARY SOFTWARE LICENSE — LIMITED, ENGAGEMENT-SCOPED
+corpusscope
+
+Copyright (c) 2026 Meridian Intelligence. All rights reserved.
+
+This software, including its source code, models, data files, and documentation
+(the "Software"), is the proprietary and confidential property of Meridian
+Intelligence ("Meridian"). The Software is licensed, not sold, and no ownership
+interest in it transfers to any recipient.
+
+1. ACCEPTANCE AND LIMITED LICENSE
+   By receiving, installing, accessing, or using the Software, the recipient
+   ("Recipient" or "you") accepts these terms; no signature is required. Subject
+   to and only for the term of the applicable engagement or agreement between the
+   parties (the "Agreement"), Meridian grants Recipient a limited, non-exclusive,
+   non-transferable, non-sublicensable, revocable license to install and use the
+   Software SOLELY for the specific engagement, task, and purpose for which it is
+   provided (the "Purpose"), in the authorized environment, and only for as long
+   as that engagement is in effect.
+
+2. RESTRICTIONS
+   Except as expressly permitted above, Recipient shall not, and shall not permit
+   any third party to:
+   (a) use the Software for any purpose other than the Purpose, or beyond the
+       scope, term, users, or environment authorized by the Agreement;
+   (b) copy, reproduce, distribute, publish, disclose, sell, rent, lease, lend,
+       host or offer as a service, or otherwise make the Software available to
+       any third party;
+   (c) modify, adapt, translate, or create derivative works of the Software;
+   (d) reverse engineer, decompile, or disassemble the Software, except to the
+       narrow extent this restriction is unenforceable under applicable law;
+   (e) remove, alter, or obscure any proprietary, copyright, or confidentiality
+       notice; or
+   (f) use the Software, or any idea or know-how in it, to build or train a
+       competing or derivative product.
+
+3. OWNERSHIP
+   Meridian and its licensors retain all right, title, and interest in and to the
+   Software and all intellectual-property rights therein. All rights not
+   expressly granted in Section 1 are reserved to Meridian.
+
+4. CONFIDENTIALITY
+   The Software is Confidential Information of Meridian. Recipient shall protect
+   it with at least reasonable care (and no less than the care it uses for its
+   own like materials), and shall restrict access to personnel who require it for
+   the Purpose and are bound by written confidentiality obligations at least as
+   protective as these.
+
+5. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+6. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, MERIDIAN SHALL NOT BE LIABLE FOR ANY
+   INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR EXEMPLARY DAMAGES ARISING OUT
+   OF OR RELATED TO THE SOFTWARE OR THIS LICENSE, HOWEVER CAUSED.
+
+7. TERMINATION; DELETION AND CLEARANCE AFTER THE EXERCISE
+   This license takes effect on delivery of the Software and terminates
+   automatically on the earlier of (a) completion of the Purpose / the exercise,
+   (b) expiry or termination of the Agreement, or (c) any breach of this license
+   by Recipient. Meridian may otherwise revoke this license as provided in the
+   Agreement.
+   Upon termination — and in any event upon completion of the exercise —
+   Recipient shall promptly, and no later than thirty (30) days thereafter:
+     (i)   cease all use of the Software;
+     (ii)  permanently DELETE and securely CLEAR the Software and ALL copies,
+           installations, build artifacts, containers, and derivatives from every
+           system, device, environment, and backup within Recipient's possession
+           or control; and
+     (iii) on Meridian's request, certify such deletion and clearance in writing.
+   Sections 2, 3, 4, 5, 6, and 8 survive termination.
+
+8. PRECEDENCE
+   If this license conflicts with the Agreement, the Agreement governs. Nothing
+   in this license grants any right beyond what the Agreement permits.
+
+9. GENERAL
+   This license is governed by the law specified in the Agreement. Recipient may
+   not assign this license without Meridian's prior written consent. If any
+   provision is held unenforceable, the remainder stays in effect.
+
+For any use beyond the Purpose, or for other licensing, contact Meridian
+Intelligence in writing.

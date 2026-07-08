@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://withmeridian.ai/schemas/clinical-emr-corpus/v2",
+  "title": "Clinical EMR Corpus — Data Scope & Intake Schema",
+  "description": "Captures the full data information about a clinical EMR dataset. PART A (scope) describes the dataset as a whole so an insight profile can be built; PART B (patients) is the per-patient record schema. Keep field names exact; unknown values are null, not omitted.",
+  "type": "object",
+  "required": ["corpus", "scale", "stream_inventory", "patients"],
+  "additionalProperties": false,
+  "properties": {
+    "corpus": {
+      "type": "object",
+      "required": ["name", "provider", "country", "source_system"],
+      "properties": {
+        "name": { "type": "string" },
+        "provider": { "type": "string" },
+        "country": { "type": "string" },
+        "source_system": { "type": "string" },
+        "source_database": { "type": ["string", "null"] },
+        "contact": { "type": "object", "properties": { "name": {"type":"string"}, "email": {"type":"string"}, "role": {"type":"string"} } }
+      }
+    },
+    "scale": {
+      "type": "object",
+      "description": "A1 — scale and computational footprint.",
+      "required": ["patients_total"],
+      "properties": {
+        "patients_total": { "type": "integer", "minimum": 0 },
+        "encounters_total": { "type": ["integer", "null"] },
+        "admissions_total": { "type": ["integer", "null"] },
+        "source_rows_total": { "type": ["integer", "null"] },
+        "linked_tables": { "type": ["integer", "null"] },
+        "total_tokens": { "type": ["integer", "null"], "description": "Full-record token count if measured." },
+        "tokeniser": { "type": ["string", "null"] },
+        "mean_tokens_per_patient": { "type": ["number", "null"] },
+        "median_tokens_per_patient": { "type": ["number", "null"] },
+        "token_distribution": {
+          "type": ["object", "null"],
+          "properties": {
+            "min_tokens_per_patient": { "type": ["number", "null"] },
+            "max_tokens_per_patient": { "type": ["number", "null"] },
+            "percentiles": { "type": ["object", "null"], "properties": { "p50": {"type":["number","null"]}, "p90": {"type":["number","null"]}, "p99": {"type":["number","null"]} } },
+            "bins": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "range": {"type":["string","null"]}, "patients": {"type":["integer","null"]} } } }
+          }
+        }
+      }
+    },
+    "stream_inventory": {
+      "type": "array",
+      "description": "A2 — for each clinical stream: present, and source-row count.",
+      "items": {
+        "type": "object",
+        "required": ["stream", "present"],
+        "additionalProperties": false,
+        "properties": {
+          "stream": { "type": "string", "enum": [
+            "demographics", "encounters", "triage_vitals", "history_notes",
+            "physical_exam", "region_findings", "impression_notes", "diagnoses",
+            "lab_requests", "lab_results", "radiology", "prescriptions",
+            "pharmacy_requests", "procedures", "immunizations", "allergies", "referrals"
+          ] },
+          "present": { "type": "boolean" },
+          "row_count": { "type": ["integer", "null"] }
+        }
+      }
+    },
+    "record_depth": {
+      "type": "object",
+      "properties": {
+        "fields_per_encounter_avg": { "type": ["number", "null"] },
+        "visits_per_patient_median": { "type": ["number", "null"] },
+        "visits_per_patient_mean": { "type": ["number", "null"] },
+        "stream_split_pct": { "type": ["object", "null"], "additionalProperties": { "type": "number" } }
+      }
+    },
+    "longitudinal": {
+      "type": "object",
+      "properties": {
+        "first_encounter_date": { "type": ["string", "null"], "format": "date" },
+        "last_encounter_date": { "type": ["string", "null"], "format": "date" },
+        "years_covered": { "type": ["integer", "null"] },
+        "encounters_by_year": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "year": {"type":"integer"}, "new_patients": {"type":["integer","null"]}, "encounters": {"type":["integer","null"]} } } }
+      }
+    },
+    "geography": {
+      "type": "object",
+      "properties": {
+        "facilities_total": { "type": ["integer", "null"] },
+        "regions_covered": { "type": ["integer", "null"] },
+        "distribution": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "region": {"type":"string"}, "facilities": {"type":["integer","null"]}, "share_pct": {"type":["number","null"]} } } }
+      }
+    },
+    "demographics_scope": {
+      "type": "object",
+      "properties": {
+        "gender_split_pct": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+        "mean_age_years": { "type": ["number", "null"] },
+        "age_parse_rate_pct": { "type": ["number", "null"] },
+        "age_bands_pct": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "band": {"type":"string"}, "share_pct": {"type":["number","null"]} } } }
+      }
+    },
+    "diagnoses_scope": {
+      "type": "object",
+      "properties": {
+        "coding_system": { "type": ["string", "null"] },
+        "coded_records": { "type": ["integer", "null"] },
+        "distinct_codes": { "type": ["integer", "null"] },
+        "icd10_shape_match_pct": { "type": ["number", "null"] },
+        "paired_free_text_pct": { "type": ["number", "null"] },
+        "by_chapter": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "chapter": {"type":"string"}, "label": {"type":["string","null"]}, "records": {"type":["integer","null"]} } } },
+        "top_conditions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "laboratory_scope": {
+      "type": "object",
+      "properties": {
+        "distinct_analytes": { "type": ["integer", "null"] },
+        "analyte_results": { "type": ["integer", "null"] },
+        "orders": { "type": ["integer", "null"] },
+        "carry_units_pct": { "type": ["number", "null"] },
+        "carry_reference_range_pct": { "type": ["number", "null"] },
+        "top_analytes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "vitals_scope": {
+      "type": "object",
+      "properties": {
+        "triage_rows": { "type": ["integer", "null"] },
+        "coverage_pct": { "type": ["object", "null"], "additionalProperties": { "type": "number" } }
+      }
+    },
+    "examination_scope": {
+      "type": "object",
+      "properties": {
+        "regions_in_grid": { "type": ["integer", "null"] },
+        "region_cells_total": { "type": ["integer", "null"] },
+        "outcome_pct": { "type": ["object", "null"], "additionalProperties": { "type": "number" } }
+      }
+    },
+    "medications_scope": {
+      "type": "object",
+      "properties": {
+        "prescription_lines": { "type": ["integer", "null"] },
+        "distinct_items": { "type": ["integer", "null"] },
+        "sig_coverage_pct": { "type": ["object", "null"], "additionalProperties": { "type": "number" } }
+      }
+    },
+    "specialties_scope": {
+      "type": "object",
+      "properties": { "distinct_specialties": { "type": ["integer", "null"] } }
+    },
+    "facilities": {
+      "type": "array",
+      "items": { "type": "object", "required": ["facility_id"], "properties": {
+        "facility_id": {"type":"string"}, "name": {"type":["string","null"]}, "region": {"type":["string","null"]}, "level": {"type":["string","null"]}, "type": {"type":["string","null"]} } }
+    },
+    "specialties": {
+      "type": "array",
+      "items": { "type": "object", "required": ["specialty_id", "name"], "properties": { "specialty_id": {"type":"string"}, "name": {"type":"string"} } }
+    },
+    "patients": {
+      "type": "array",
+      "description": "PART B — the record. One object per patient; encounters nested and ordered by date.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["patient_id", "demographics", "encounters"],
+        "properties": {
+          "patient_id": { "type": "string" },
+          "demographics": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "age": { "type": ["string", "null"] },
+              "age_years": { "type": ["integer", "null"] },
+              "age_group": { "type": ["string", "null"] },
+              "gender": { "type": ["string", "null"], "enum": ["Female", "Male", "Other", "Unknown", null] },
+              "home_region": { "type": ["string", "null"] },
+              "home_facility_id": { "type": ["string", "null"] },
+              "registered_date": { "type": ["string", "null"], "format": "date" }
+            }
+          },
+          "problem_list": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "problem": {"type":["string","null"]}, "icd10_code": {"type":["string","null"]}, "onset_date": {"type":["string","null"]}, "status": {"type":["string","null"]} } } },
+          "allergies": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "substance": {"type":["string","null"]}, "reaction": {"type":["string","null"]}, "severity": {"type":["string","null"]} } } },
+          "immunizations": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "vaccine": {"type":["string","null"]}, "date": {"type":["string","null"]}, "dose": {"type":["string","null"]} } } },
+          "encounters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["encounter_id"],
+              "properties": {
+                "encounter_id": { "type": "string" },
+                "facility_id": { "type": ["string", "null"] },
+                "region": { "type": ["string", "null"] },
+                "specialty_id": { "type": ["string", "null"] },
+                "encounter_date": { "type": ["string", "null"], "format": "date" },
+                "visit_type": { "type": ["string", "null"] },
+                "triage_vitals": { "type": ["object", "null"], "additionalProperties": false, "properties": {
+                  "temperature_c": {"type":["number","null"]}, "blood_pressure": {"type":["string","null"]},
+                  "bp_systolic": {"type":["integer","null"]}, "bp_diastolic": {"type":["integer","null"]},
+                  "pulse_rate": {"type":["integer","null"]}, "respiratory_rate": {"type":["integer","null"]},
+                  "oxygen_saturation": {"type":["integer","null"]}, "weight_kg": {"type":["number","null"]},
+                  "height_cm": {"type":["number","null"]}, "bmi": {"type":["number","null"]}, "random_blood_sugar": {"type":["number","null"]} } },
+                "chief_complaint": { "type": ["string", "null"] },
+                "history_notes": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "text": {"type":["string","null"]} } } },
+                "physical_exam": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "text": {"type":["string","null"]} } } },
+                "region_findings": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["region","outcome"], "properties": { "region": {"type":"string"}, "outcome": {"type":"string","enum":["Not examined","Normal","Abnormal"]}, "finding_text": {"type":["string","null"]} } } },
+                "impression_notes": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "text": {"type":["string","null"]} } } },
+                "diagnoses": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "icd10_code": {"type":["string","null"]}, "icd10_chapter": {"type":["string","null"]}, "diagnosis_name": {"type":["string","null"]}, "diagnosis_text": {"type":["string","null"]}, "is_primary": {"type":["boolean","null"]} } } },
+                "lab_requests": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "order_id": {"type":["string","null"]}, "test_name": {"type":["string","null"]}, "panel": {"type":["string","null"]}, "ordered_date": {"type":["string","null"]} } } },
+                "lab_results": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["analyte_name"], "properties": { "order_id": {"type":["string","null"]}, "analyte_name": {"type":"string"}, "value": {"type":["string","number","null"]}, "unit": {"type":["string","null"]}, "reference_range": {"type":["string","null"]}, "flag": {"type":["string","null"]}, "resulted_date": {"type":["string","null"]} } } },
+                "radiology": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "modality": {"type":["string","null"]}, "study_name": {"type":["string","null"]}, "report_text": {"type":["string","null"]}, "image_ref": {"type":["string","null"]}, "performed_date": {"type":["string","null"]} } } },
+                "procedures": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "name": {"type":["string","null"]}, "code": {"type":["string","null"]}, "performed_date": {"type":["string","null"]} } } },
+                "prescriptions": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "brand_name": {"type":["string","null"]}, "generic_name": {"type":["string","null"]}, "dose": {"type":["string","null"]}, "route": {"type":["string","null"]}, "frequency": {"type":["string","null"]}, "duration": {"type":["string","null"]}, "sig": {"type":["string","null"]}, "prescribed_date": {"type":["string","null"]} } } },
+                "pharmacy_requests": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "request_id": {"type":["string","null"]}, "drug_name": {"type":["string","null"]}, "quantity": {"type":["number","null"]}, "status": {"type":["string","null"]}, "requested_date": {"type":["string","null"]} } } },
+                "referrals": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "to_facility_id": {"type":["string","null"]}, "specialty": {"type":["string","null"]}, "reason": {"type":["string","null"]}, "date": {"type":["string","null"]} } } },
+                "clinical_notes": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "form": {"type":["string","null"]}, "text": {"type":["string","null"]} } } },
+                "documents": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "title": {"type":["string","null"]}, "category": {"type":["string","null"]}, "ref": {"type":["string","null"]} } } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

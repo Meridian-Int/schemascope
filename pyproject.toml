@@ -1,45 +1,68 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "schemascope"
 dynamic = ["version"]
-description = "Profile a data source (files, SQLite, or any SQL database) against a schema across JSON/YAML/XML/TXT formats."
+description = "Profile a clinical EMR database into a portable, schema-validated corpus profile: exact tiktoken token counts (full-record vs clinical-content), per-stream scope metrics, one worked patient record, and a schema-validated YAML/JSON deliverable — from any SQL database via a reviewable mapping."
 readme = "README.md"
-requires-python = ">=3.8"
-license = { text = "MIT" }
-authors = [{ name = "schemascope maintainers" }]
-# SQLAlchemy powers the live-database source (SqlConnector). Per-database drivers
-# are optional extras below — install the one for your engine.
-dependencies = ["PyYAML>=5.1", "SQLAlchemy>=1.4"]
+requires-python = ">=3.9"
+license = { text = "Proprietary — Meridian Intelligence, engagement-scoped (see LICENSE)" }
+authors = [{ name = "Meridian Intelligence" }]
+keywords = ["clinical", "emr", "corpus", "profiling", "tiktoken", "tokens", "healthcare", "data-profiling"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: Other/Proprietary License",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+  "Intended Audience :: Healthcare Industry",
+]
+dependencies = [
+  # Reads straight from any SQL database (Microsoft Fabric / Azure SQL analytics
+  # endpoint, PostgreSQL, MySQL, SQLite, …) via SQLAlchemy.
+  "SQLAlchemy>=1.4",
+  "pyodbc>=4.0",
+  # Exact token counting (o200k_base needs tiktoken >= 0.7).
+  "tiktoken>=0.7",
+  # Fill the YAML intake template and validate the JSON against the intake schema.
+  "PyYAML>=5.4",
+  "jsonschema>=4.0",
+]
 
-# Per-engine drivers. schemascope's connector is generic (any SQLAlchemy dialect);
-# install the driver for whichever engine(s) you point it at. SQLite needs none.
+# Per-engine drivers for the source database. pyodbc (SQL Server / Azure / Fabric)
+# ships by default above; install the extra for whatever else you point it at.
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3"]
 mysql = ["PyMySQL>=1"]
-mssql = ["pyodbc>=4"]
 oracle = ["oracledb>=1"]
-mariadb = ["PyMySQL>=1"]
-cockroach = ["sqlalchemy-cockroachdb>=1", "psycopg2-binary>=2.9"]
-redshift = ["sqlalchemy-redshift>=0.8", "redshift-connector>=2"]
 snowflake = ["snowflake-sqlalchemy>=1.5"]
 bigquery = ["sqlalchemy-bigquery>=1.9"]
-databricks = ["databricks-sqlalchemy>=1"]
-db2 = ["ibm-db-sa>=0.4"]
-trino = ["trino[sqlalchemy]>=0.328"]
-clickhouse = ["clickhouse-sqlalchemy>=0.3"]
-duckdb = ["duckdb-engine>=0.13"]
+redshift = ["sqlalchemy-redshift>=0.8", "redshift-connector>=2"]
+dev = ["pytest>=7.0"]
 
 [project.scripts]
 schemascope = "schemascope.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Meridian-Int/schemascope"
+Issues = "https://github.com/Meridian-Int/schemascope/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
 
 [tool.setuptools.dynamic]
 version = { attr = "schemascope.version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+schemascope = ["data/*.json", "data/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

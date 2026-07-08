@@ -1,73 +1,33 @@
-"""schemascope — profile a data source against a schema.
+"""schemascope — profile a clinical EMR database into the Meridian corpus intake profile.
 
-Load a schema from any of four formats (JSON / YAML / XML / TXT-DSL) into one
-canonical model, point a connector at a data source (a database via a SQLAlchemy
-URL, or a local SQLite file), and profile the data: per-field null counts,
-distinct counts, the
-type inferred from the values, and whether that data agrees with the declared
-schema type.
+Reads a whole SQL database (the same source deidkit reads), counts tokens exactly
+with tiktoken (full-record vs clinical-content, dual encoder), computes the A1–A12
+scope metrics and one worked patient, and emits a YAML/JSON deliverable that
+validates against the intake schema.
 
-The public API is re-exported here so the natural top-level calls just work::
+    import schemascope as cs
 
-    import schemascope
-    schema = schemascope.load_schema("schema.yaml")
-    report = schemascope.profile(schema, schemascope.open_connector("data/"))
-    schemascope.__version__
+    db = cs.Db(cs.connect(url))
+    mapping = cs.Mapping.from_yaml("mapping.yaml")
+    profile = cs.build_profile(db, mapping)
+    issues = cs.run_qa(profile)          # QA gates
+    cs.write_yaml(profile, "profile.yaml")
 """
 
-from __future__ import annotations
-
-from .connector import (
-    Connector,
-    SqlConnector,
-    SqliteConnector,
-    open_connector,
-    store_name,
-)
-from .model import (
-    CANONICAL_TYPES,
-    ConnectorError,
-    Entity,
-    Field,
-    Schema,
-    SchemaError,
-    normalize_type,
-)
-from .profile import (
-    EntityProfile,
-    FieldProfile,
-    SchemaProfile,
-    profile,
-)
-from .schema_loader import detect_format, load_schema
-from .typeinfer import infer_type, type_compatible
 from .version import __version__
+from .io import Db, connect
+from .mapping import Mapping, StreamMap, Keys, autodetect
+from .profile import build_profile
+from .qa import run_qa, errors, Issue
+from .validate import validate
+from .render import load_schema, write_json, write_yaml
 
 __all__ = [
     "__version__",
-    # model
-    "Schema",
-    "Entity",
-    "Field",
-    "SchemaError",
-    "ConnectorError",
-    "CANONICAL_TYPES",
-    "normalize_type",
-    # loading
-    "load_schema",
-    "detect_format",
-    # connectors
-    "Connector",
-    "SqliteConnector",
-    "SqlConnector",
-    "open_connector",
-    "store_name",
-    # inference
-    "infer_type",
-    "type_compatible",
-    # profiling
-    "profile",
-    "SchemaProfile",
-    "EntityProfile",
-    "FieldProfile",
+    "Db", "connect",
+    "Mapping", "StreamMap", "Keys", "autodetect",
+    "build_profile",
+    "run_qa", "errors", "Issue",
+    "validate",
+    "load_schema", "write_json", "write_yaml",
 ]

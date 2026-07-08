@@ -1,9 +1,0 @@
-# The same "users" entity as schema.json / .yaml / .xml, in the terse line DSL.
-# The DSL is minimal by design (no schema-level name/version) — entities + fields.
-entity users
-  id: integer pk
-  email: string
-  age: integer null
-  active: boolean
-  deleted: integer not null
-  signup_date: date
