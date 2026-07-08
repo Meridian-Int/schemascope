@@ -5,12 +5,32 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "schemascope"
 dynamic = ["version"]
-description = "Profile a data source against a schema across JSON/YAML/XML/TXT formats."
+description = "Profile a data source (files, SQLite, or any SQL database) against a schema across JSON/YAML/XML/TXT formats."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [{ name = "schemascope maintainers" }]
-dependencies = ["PyYAML>=5.1"]
+# SQLAlchemy powers the live-database source (SqlConnector). Per-database drivers
+# are optional extras below — install the one for your engine.
+dependencies = ["PyYAML>=5.1", "SQLAlchemy>=1.4"]
+
+# Per-engine drivers. schemascope's connector is generic (any SQLAlchemy dialect);
+# install the driver for whichever engine(s) you point it at. SQLite needs none.
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3"]
+mysql = ["PyMySQL>=1"]
+mssql = ["pyodbc>=4"]
+oracle = ["oracledb>=1"]
+mariadb = ["PyMySQL>=1"]
+cockroach = ["sqlalchemy-cockroachdb>=1", "psycopg2-binary>=2.9"]
+redshift = ["sqlalchemy-redshift>=0.8", "redshift-connector>=2"]
+snowflake = ["snowflake-sqlalchemy>=1.5"]
+bigquery = ["sqlalchemy-bigquery>=1.9"]
+databricks = ["databricks-sqlalchemy>=1"]
+db2 = ["ibm-db-sa>=0.4"]
+trino = ["trino[sqlalchemy]>=0.328"]
+clickhouse = ["clickhouse-sqlalchemy>=0.3"]
+duckdb = ["duckdb-engine>=0.13"]
 
 [project.scripts]
 schemascope = "schemascope.cli:main"
